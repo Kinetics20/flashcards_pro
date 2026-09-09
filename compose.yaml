@@ -1,0 +1,21 @@
+name: flashcards
+
+services:
+  content-service:
+    build:
+      context: ./services/content-service
+    init: true
+    restart: unless-stopped
+    environment:
+      APP_NAME: Flashcards Content Service
+      APP_ENVIRONMENT: local
+      APP_DOCS_ENABLED: "true"
+    ports:
+      - "127.0.0.1:8002:8000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

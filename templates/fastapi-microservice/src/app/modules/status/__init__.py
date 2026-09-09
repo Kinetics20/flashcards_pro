@@ -1,0 +1,1 @@
+"""Public service metadata endpoint."""
