@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+          python-version: "3.14.7"
+
+      - name: Install locked dependencies
+        run: uv sync --all-groups --frozen
+
+      - name: Audit Python dependencies
+        run: uv run pip-audit --skip-editable
+
+      - name: Run quality gate
+        run: uv run tox run-parallel
+
+  container:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Build runtime image
+        run: docker build --tag fastapi-microservice:ci .

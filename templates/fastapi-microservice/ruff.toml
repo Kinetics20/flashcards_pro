@@ -1,0 +1,32 @@
+target-version = "py314"
+line-length = 100
+src = ["src", "tests", "docs"]
+include = [
+    "src/**/*.py",
+    "tests/**/*.py",
+    "docs/**/*.py",
+]
+
+[lint]
+select = [
+    "ASYNC",
+    "B",
+    "C4",
+    "E",
+    "F",
+    "I",
+    "PERF",
+    "PIE",
+    "RUF",
+    "S",
+    "SIM",
+    "UP",
+    "W",
+]
+
+[lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "S105", "S106"]
+
+[format]
+docstring-code-format = true
+quote-style = "double"
