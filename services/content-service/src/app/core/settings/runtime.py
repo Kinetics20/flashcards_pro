@@ -10,7 +10,7 @@ from app.core.settings.base import ComponentSettings, Environment
 class RuntimeSettings(ComponentSettings):
     """Process identity and runtime settings."""
 
-    name: str = Field(default="FastAPI Microservice", min_length=1, max_length=100)
+    name: str = Field(default="Flashcards Content Service", min_length=1, max_length=100)
     version: str = Field(default="0.1.0", pattern=r"^[0-9A-Za-z][0-9A-Za-z.+-]*$")
     environment: Environment = Environment.LOCAL
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"

@@ -24,7 +24,7 @@ async def test_health_and_status_contracts(test_settings: Settings) -> None:
         "checks": {"application": {"status": "ok"}},
     }
     assert service_status.json() == {
-        "name": "FastAPI Microservice",
+        "name": "Flashcards Content Service",
         "version": "0.1.0",
         "environment": "test",
         "status": "ok",
