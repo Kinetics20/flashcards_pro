@@ -1,4 +1,4 @@
-project = "Flashcards Content Service Template"
+project = "Flashcards Content Service"
 author = "Project maintainers"
 copyright = "2026, Project maintainers"
 
