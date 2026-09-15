@@ -1,5 +1,5 @@
-FastAPI Microservice Template
-=============================
+Flashcards Content Service 
+==========================
 
 A small production baseline for independently deployable FastAPI services.
 

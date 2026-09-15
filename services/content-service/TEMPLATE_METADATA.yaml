@@ -1,0 +1,5 @@
+schemaVersion: "1"
+template:
+  name: fastapi-microservice
+  source: templates/fastapi-microservice
+  generatorVersion: "1"

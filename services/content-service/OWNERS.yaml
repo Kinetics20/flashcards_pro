@@ -1,0 +1,7 @@
+schemaVersion: "1"
+service:
+  id: "content-service"
+  displayName: "Flashcards Content Service"
+  owner: "backend-team"
+  type: microservice
+  lifecycle: experimental

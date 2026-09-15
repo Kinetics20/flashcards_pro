@@ -1,191 +1,97 @@
-# FastAPI Microservice Template
+# Flashcards Backend
 
-A clean, production-oriented Python 3.14 and FastAPI starter extracted from the
-same conventions used by the FrameML API. It contains infrastructure and
-quality foundations without carrying any FrameML business logic.
+Backend monorepo for the Flashcards application.
 
-## Included
+## Repository structure
 
-- `uv` dependency management with a committed lockfile
-- `src/` package layout and a FastAPI application factory
-- component-oriented, validated environment configuration
-- versioned routes under `/api/v1`
-- liveness and readiness probes outside the public API version
-- structured JSON logs and `X-Request-ID` correlation
-- safe, consistent error responses and sanitized validation errors
-- configurable CORS and request-body limits
-- non-root, read-only-friendly Docker image and Docker Compose
-- Kubernetes Deployment and Service example
-- Ruff, strict Pyright, pytest coverage, tox, pip-audit, and Sphinx
-- GitHub Actions CI and Dependabot configuration
+- `services/` — independently buildable backend microservices.
+- `templates/` — source templates used by the service generator.
+- `contracts/` — OpenAPI specifications and event schemas.
+- `infrastructure/` — infrastructure architecture and shared platform documentation.
+- `deploy/helm/` — Kubernetes application Helm charts.
+- `deploy/terraform/` — Terraform-managed infrastructure.
+- `adr/` — architecture decision records.
+- `docs/` — repository-level documentation.
+- `scripts/` — repository automation.
 
-The template tracks the latest stable Python feature release and pins current
-stable library/tool versions in `pyproject.toml` and `uv.lock`. Dependabot
-checks Python, Docker, and GitHub Actions updates weekly.
+## Services
 
-The baseline intentionally has no database, broker, authentication provider,
-or domain example. Add only the infrastructure required by the service you are
-building.
+| Service | Responsibility | Owner | Local port |
+|---|---|---|---|
+| `content-service` | Deck and card management | `backend-team` | `8002` |
 
-## Create a service from this template
+## Local development
 
-When using GitHub's template flow:
+Prerequisites:
 
-```shell
-gh repo create my-service \
-  --template pawelkonior/fastapi-microservice-template \
-  --private \
-  --clone
-cd my-service
+- Python 3.14
+- uv
+- Docker with Docker Compose
+- rsync
+
+Start the backend:
+
+```bash
+docker compose up --build --wait
+
 ```
 
-For a plain clone:
+Stop the backend:
 
-```shell
-git clone https://github.com/pawelkonior/fastapi-microservice-template.git my-service
-cd my-service
-rm -rf .git
-git init
+```bash
+
+docker compose down
+
 ```
 
-Then update the project metadata in `pyproject.toml` and the defaults in
-`.env.example`.
+## Creating a service
 
-## Local setup
+```bash
 
-Install `uv`, then run:
+./scripts/create-service.sh \
+  study-service \
+  "Flashcards Study Service" \
+  --owner backend-team
 
-```shell
-cp .env.example .env
-uv sync --all-groups
-uv run uvicorn app.main:app --app-dir src --reload
 ```
 
-Open:
+See `docs/service-lifecycle.md` for the complete process.
 
-- API status: <http://127.0.0.1:8000/api/v1/status>
-- Swagger UI: <http://127.0.0.1:8000/docs>
-- OpenAPI: <http://127.0.0.1:8000/openapi.json>
-- Liveness: <http://127.0.0.1:8000/health/live>
-- Readiness: <http://127.0.0.1:8000/health/ready>
+## Testing
 
-Configuration uses `APP_` variables. Unknown `APP_` names fail fast so that a
-misspelled production setting cannot be silently ignored. Documentation is
-enabled by default for local development and must be disabled in production.
+Run the quality gate inside a service directory:
 
-## Quality gate
+```bash
 
-Run the same checks as CI:
-
-```shell
 uv sync --all-groups --frozen
 uv run pip-audit --skip-editable
 uv run tox run-parallel
-docker build --tag fastapi-microservice:local .
+make docs
+make image-build
+
 ```
 
-Individual checks:
+## Architecture rules
+- Services must not import internal modules from another service.
+- Services must not access another service's database.
+- Cross-service communication must use declared API or event contracts.
+- Shared contracts must not contain service domain models.
+- Every service must remain independently testable and buildable.
 
-```shell
-uv run ruff check
-uv run ruff format --check
-uv run pyright
-uv run pytest
-uv run --group docs sphinx-build -E -a -W --keep-going -b html docs docs/_build/html
+Run the boundary validation with:
+
+```bash
+
+python3 scripts/check-service-boundaries.py
+
 ```
 
-## Containers
+## Service ownership
+Every service must declare its owner in OWNERS.yaml.
+Updating the template
+Update `templates/fastapi-microservice`, increment the generator version when necessary, and verify the change by generating a temporary service.
 
-Run the service locally:
+Existing services must be upgraded through explicit pull requests.
 
-```shell
-docker compose up --build --wait
-docker compose ps
-```
-
-Stop it with `docker compose down`.
-
-The image runs as UID/GID `10001`, listens on port `8000`, writes logs to
-standard output, and exposes a Docker health check. The Compose definition also
-drops Linux capabilities and uses a read-only root filesystem.
-
-## Project structure
-
-```text
-src/app/
-├── core/                 # settings, application errors, context, logging
-├── http/                 # router composition, DI, handlers, middleware
-├── modules/              # feature-oriented vertical slices
-│   ├── health/           # process probes
-│   └── status/           # public service metadata
-└── main.py               # application factory and lifespan only
-deploy/kubernetes/        # deployment example
-docs/                     # architecture and operations documentation
-tests/                    # tests mirroring application boundaries
-```
-
-## Add a feature
-
-Build business capabilities as vertical slices under
-`src/app/modules/<feature>/`. Create a layer only when it has a real
-responsibility. A database-backed feature will commonly use:
-
-```text
-src/app/modules/widgets/
-├── __init__.py
-├── model.py
-├── schemas.py
-├── repository.py
-├── service.py
-├── dependencies.py
-├── exceptions.py
-└── router.py
-```
-
-Keep the dependency direction one-way:
-
-```text
-router -> schema -> service -> repository -> persistence adapter
-```
-
-- Routers own HTTP input/output, status codes, and dependencies.
-- Schemas own request validation and response serialization.
-- Services own use cases and business rules; they do not import FastAPI.
-- Repositories own persistence queries; they do not commit or return HTTP
-  responses.
-- Dependencies compose services and adapters at the HTTP edge.
-- Application exceptions contain no HTTP response logic.
-
-Register the new router in `src/app/http/router.py`. If the service gains a
-startup-critical resource such as a database, initialize and close it in the
-lifespan, and add its check to `/health/ready`.
-
-## Error contract
-
-Expected application errors and validation failures use one stable envelope:
-
-```json
-{
-  "error": {
-    "code": "not_found",
-    "message": "The requested resource was not found",
-    "request_id": "d81ee0d6-1d77-4477-a66f-f7afca8369f3"
-  }
-}
-```
-
-Unexpected exceptions are logged with their request ID and returned as a
-generic `500` response. Validation responses never reflect submitted values or
-validator context, which reduces accidental secret exposure.
-
-## Production checklist
-
-- Change the package metadata and application name/version.
-- Set `APP_ENVIRONMENT=production` and `APP_DOCS_ENABLED=false`.
-- Configure exact CORS origins only when browser access is required.
-- Add authentication and authorization at the HTTP boundary.
-- Add real readiness checks for startup-critical resources.
-- Build and pin an immutable image tag in the Kubernetes manifest.
-- Configure CPU/memory limits, replicas, autoscaling, and disruption policy for
-  the workload.
-- Keep secrets outside Git and inject them through the deployment platform.
+## Removing a service
+Follow the dependency, data-retention, deployment, contract, and documentation steps described in `docs/service-lifecycle.md`.

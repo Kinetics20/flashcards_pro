@@ -1,0 +1,345 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repository-checks:
+    name: Repository checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Validate required repository files
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          required_files=(
+            "README.md"
+            "compose.yaml"
+            "contracts/README.md"
+            "infrastructure/README.md"
+            "deploy/helm/README.md"
+            "deploy/terraform/README.md"
+            "docs/README.md"
+            "docs/service-lifecycle.md"
+            "adr/README.md"
+            "scripts/README.md"
+            "scripts/create-service.sh"
+            "scripts/check-service-boundaries.py"
+          )
+
+          for required_file in "${required_files[@]}"; do
+            if [[ ! -s "$required_file" ]]; then
+              echo "::error file=${required_file}::Required file is missing or empty"
+              exit 1
+            fi
+          done
+
+      - name: Validate service generator syntax
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash -n scripts/create-service.sh
+          test -x scripts/create-service.sh
+
+      - name: Check service boundaries
+        run: python3 scripts/check-service-boundaries.py
+
+      - name: Validate Docker Compose
+        run: docker compose config --quiet
+
+  discover-services:
+    name: Discover services
+    runs-on: ubuntu-latest
+
+    outputs:
+      services: ${{ steps.discover.outputs.services }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Build service matrix
+        id: discover
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          python3 <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          service_pattern = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
+
+          services = sorted(
+              path.parent.name
+              for path in Path("services").glob("*/pyproject.toml")
+          )
+
+          if not services:
+              raise SystemExit("No services were found under services/")
+
+          invalid = [
+              service
+              for service in services
+              if service_pattern.fullmatch(service) is None
+          ]
+
+          if invalid:
+              raise SystemExit(
+                  f"Invalid service directory names: {', '.join(invalid)}"
+              )
+
+          output_file = Path(os.environ["GITHUB_OUTPUT"])
+          with output_file.open("a", encoding="utf-8") as output:
+              output.write(f"services={json.dumps(services)}\n")
+
+          print(f"Discovered services: {', '.join(services)}")
+          PY
+
+  service-quality:
+    name: Quality — ${{ matrix.service }}
+    needs:
+      - discover-services
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.discover-services.outputs.services) }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "0.12.11"
+          enable-cache: true
+          python-version: "3.14.7"
+          cache-dependency-glob: services/${{ matrix.service }}/uv.lock
+
+      - name: Install locked dependencies
+        working-directory: services/${{ matrix.service }}
+        run: uv sync --all-groups --frozen
+
+      - name: Audit dependencies
+        working-directory: services/${{ matrix.service }}
+        run: uv run pip-audit --skip-editable
+
+      - name: Run quality gate
+        working-directory: services/${{ matrix.service }}
+        run: uv run tox run-parallel
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-${{ matrix.service }}
+          path: services/${{ matrix.service }}/coverage.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
+  service-container:
+    name: Container — ${{ matrix.service }}
+    needs:
+      - discover-services
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.discover-services.outputs.services) }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Build service image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          docker build \
+            --tag "flashcards-${{ matrix.service }}:${{ github.sha }}" \
+            "services/${{ matrix.service }}"
+
+      - name: Run container smoke test
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          image="flashcards-${{ matrix.service }}:${{ github.sha }}"
+          container_id="$(docker run \
+            --detach \
+            --publish 127.0.0.1::8000 \
+            --env APP_ENVIRONMENT=test \
+            "$image")"
+
+          cleanup() {
+            docker logs "$container_id" || true
+            docker rm --force "$container_id" >/dev/null 2>&1 || true
+          }
+
+          trap cleanup EXIT
+
+          host_port="$(docker inspect \
+            --format '{{(index (index .NetworkSettings.Ports "8000/tcp") 0).HostPort}}' \
+            "$container_id")"
+
+          curl \
+            --fail \
+            --show-error \
+            --retry 20 \
+            --retry-delay 1 \
+            --retry-all-errors \
+            "http://127.0.0.1:${host_port}/health/live"
+
+          curl \
+            --fail \
+            "http://127.0.0.1:${host_port}/health/ready"
+
+          curl \
+            --fail \
+            "http://127.0.0.1:${host_port}/api/v1/status"
+
+          docker stop --time 10 "$container_id"
+
+          exit_code="$(docker inspect \
+            --format '{{.State.ExitCode}}' \
+            "$container_id")"
+
+          if [[ "$exit_code" != "0" ]]; then
+            echo "::error::Container exited with code ${exit_code}"
+            exit 1
+          fi
+
+  template-conformance:
+    name: Template conformance
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "0.12.11"
+          enable-cache: true
+          python-version: "3.14.7"
+          cache-dependency-glob: templates/fastapi-microservice/uv.lock
+
+      - name: Generate sample service
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          bash -n scripts/create-service.sh
+
+          ./scripts/create-service.sh \
+            ci-sample-service \
+            "CI Sample Service" \
+            --owner platform-team \
+            --output "$RUNNER_TEMP/ci-sample-service"
+
+      - name: Validate generated structure
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          generated="$RUNNER_TEMP/ci-sample-service"
+
+          required_files=(
+            "pyproject.toml"
+            "uv.lock"
+            "Dockerfile"
+            "README.md"
+            "OWNERS.yaml"
+            "TEMPLATE_METADATA.yaml"
+            "Makefile"
+            ".env.example"
+            "src/app/main.py"
+          )
+
+          for required_file in "${required_files[@]}"; do
+            if [[ ! -s "${generated}/${required_file}" ]]; then
+              echo "::error file=${generated}/${required_file}::Generated file is missing or empty"
+              exit 1
+            fi
+          done
+
+          test ! -e "${generated}/.git"
+          test ! -e "${generated}/.github"
+          test ! -e "${generated}/compose.yaml"
+          test ! -e "${generated}/deploy"
+
+          if rg -n \
+            --glob '!README.md' \
+            --glob '!TEMPLATE_METADATA.yaml' \
+            "FastAPI Microservice|fastapi-microservice" \
+            "$generated"; then
+            echo "::error::Unresolved template identity found"
+            exit 1
+          fi
+
+      - name: Test generated service
+        working-directory: ${{ runner.temp }}/ci-sample-service
+        run: |
+          uv lock --check
+          uv sync --all-groups --frozen
+          make lint
+          make format-check
+          make typecheck
+          make test
+          make docs
+
+      - name: Build generated service image
+        working-directory: ${{ runner.temp }}/ci-sample-service
+        run: |
+          make image-build IMAGE=flashcards-ci-sample:${{ github.sha }}
+
+  ci-success:
+    name: CI success
+    if: always()
+
+    needs:
+      - repository-checks
+      - discover-services
+      - service-quality
+      - service-container
+      - template-conformance
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verify all jobs succeeded
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          test "${{ needs.repository-checks.result }}" = "success"
+          test "${{ needs.discover-services.result }}" = "success"
+          test "${{ needs.service-quality.result }}" = "success"
+          test "${{ needs.service-container.result }}" = "success"
+          test "${{ needs.template-conformance.result }}" = "success"
