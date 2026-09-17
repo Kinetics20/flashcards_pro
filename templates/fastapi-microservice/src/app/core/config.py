@@ -1,5 +1,21 @@
 """Public configuration imports."""
 
-from app.core.settings import Environment, HttpSettings, RuntimeSettings, Settings, get_settings
+from app.core.settings import (
+    DatabaseSettings,
+    Environment,
+    HttpSettings,
+    ObservabilitySettings,
+    RuntimeSettings,
+    Settings,
+    get_settings,
+)
 
-__all__ = ["Environment", "HttpSettings", "RuntimeSettings", "Settings", "get_settings"]
+__all__ = [
+    "DatabaseSettings",
+    "Environment",
+    "HttpSettings",
+    "ObservabilitySettings",
+    "RuntimeSettings",
+    "Settings",
+    "get_settings",
+]
