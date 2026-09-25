@@ -30,4 +30,4 @@ async def database_session(request: Request) -> AsyncGenerator[AsyncSession]:
 
 
 SettingsDependency = Annotated[Settings, Depends(settings_from_request)]
-DatabaseSession = Annotated[Settings, Depends(settings_from_request)]
+DatabaseSession = Annotated[AsyncSession, Depends(database_session)]

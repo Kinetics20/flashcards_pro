@@ -5,6 +5,7 @@ include = [
     "src/**/*.py",
     "tests/**/*.py",
     "docs/**/*.py",
+    "migrations/**/*.py"
 ]
 
 [lint]
