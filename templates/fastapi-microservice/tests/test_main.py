@@ -1,9 +1,13 @@
-from unittest.mock import Mock
+from unittest.mock import Mock, create_autospec
 
+import pytest
 from pytest import MonkeyPatch
 
 from app import main
 from app.core.config import Environment, Settings
+from app.platform.database import DatabaseRuntime
+
+_DATABASE_URL = "postgresql+asyncpg://flashcards:test-only@localhost:5432/flashcards"
 
 
 def test_application_factory_configures_identity_and_documentation() -> None:
@@ -31,6 +35,8 @@ def test_application_factory_configures_identity_and_documentation() -> None:
     assert exposed.docs_url == "/docs"
     assert exposed.redoc_url == "/redoc"
     assert exposed.openapi_url == "/openapi.json"
+    assert hidden.state.database is None
+    assert exposed.state.database is None
 
 
 async def test_lifespan_configures_logging_and_reports_lifecycle(
@@ -49,3 +55,52 @@ async def test_lifespan_configures_logging_and_reports_lifecycle(
     assert info.call_count == 2
     assert info.call_args_list[0].args == ("Application started",)
     assert info.call_args_list[1].args == ("Application stopped",)
+
+
+def test_application_factory_binds_enabled_database_runtime(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    settings = Settings(
+        _env_file=None,
+        environment=Environment.TEST,
+        database_enabled=True,
+        database_url=_DATABASE_URL,
+    )
+    database = create_autospec(DatabaseRuntime, instance=True)
+    create_runtime = Mock(return_value=database)
+    monkeypatch.setattr(main, "create_database_runtime", create_runtime)
+
+    application = main.create_app(settings)
+
+    create_runtime.assert_called_once_with(settings.database)
+    assert application.state.database is database
+
+
+async def test_lifespan_pings_and_closes_enabled_database(
+    test_settings: Settings,
+) -> None:
+    application = main.create_app(test_settings)
+    database = create_autospec(DatabaseRuntime, instance=True)
+    application.state.database = database
+
+    async with main.lifespan(application):
+        database.ping.assert_awaited_once_with()
+        database.close.assert_not_awaited()
+
+    database.close.assert_awaited_once_with()
+
+
+async def test_lifespan_closes_database_after_startup_failure(
+    test_settings: Settings,
+) -> None:
+    application = main.create_app(test_settings)
+    database = create_autospec(DatabaseRuntime, instance=True)
+    database.ping.side_effect = RuntimeError("database startup failed")
+    application.state.database = database
+
+    with pytest.raises(RuntimeError, match="database startup failed"):
+        async with main.lifespan(application):
+            pytest.fail("lifespan yielded despite failed database startup")
+
+    database.ping.assert_awaited_once_with()
+    database.close.assert_awaited_once_with()
