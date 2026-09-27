@@ -375,6 +375,8 @@ migration:
 
 migration-check:
 \t@if [ -f alembic.ini ]; then uv run alembic check; else printf '%s\\n' 'Alembic is not configured for this service.'; exit 2; fi
+"""
+    path.write_text(makefile, encoding="utf-8")
 
 
 update_text_files()
