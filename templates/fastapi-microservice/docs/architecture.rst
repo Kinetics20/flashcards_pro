@@ -16,9 +16,12 @@ layer composes concrete adapters at the edge.
 Application lifecycle
 ---------------------
 
-``app.main.create_app`` builds the application. The FastAPI lifespan owns
-process-level resources and should initialize them before yielding. Cleanup
-runs after the yield in reverse ownership order.
+``app.main.create_app`` builds the application and creates the optional database
+and telemetry runtimes. The FastAPI lifespan verifies the enabled database
+connection before accepting traffic.
+
+Shutdown always closes the database runtime and flushes telemetry providers,
+including when application startup fails.
 
 HTTP boundary
 -------------

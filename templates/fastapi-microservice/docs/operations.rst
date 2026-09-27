@@ -16,6 +16,10 @@ Health probes
 checks for required local resources to readiness when introducing them. Avoid
 removing a healthy replica from load solely because a transient downstream
 integration is unavailable.
+When ``APP_DATABASE_ENABLED=true``, startup verifies the database connection
+and ``/health/ready`` performs a database ping. A failed ping returns
+``503 Service Unavailable``. Database checks are skipped when persistence is
+disabled.
 
 Logging
 -------

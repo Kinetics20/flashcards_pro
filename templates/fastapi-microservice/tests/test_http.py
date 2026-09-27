@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 
 from fastapi import Request
 from httpx import ASGITransport, AsyncClient
+from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags, TraceState, use_span
 from pydantic import BaseModel, ConfigDict
 from pytest import LogCaptureFixture
 
@@ -177,6 +178,8 @@ def test_outbound_headers_and_log_filter_follow_request_context() -> None:
     assert outbound_correlation_headers() == {}
     assert request_filter.filter(record) is True
     assert record.request_id == "-"  # type: ignore[attr-defined]
+    assert record.trace_id == "-"  # type: ignore[attr-defined]
+    assert record.span_id == "-"  # type: ignore[attr-defined]
 
     token = set_request_id("outbound-1")
     try:
@@ -190,3 +193,46 @@ def test_outbound_headers_and_log_filter_follow_request_context() -> None:
         reset_request_id(token)
 
     assert get_request_id() is None
+
+
+def test_log_filter_adds_active_trace_context_without_overwriting_explicit_values() -> None:
+    request_filter = RequestContextFilter()
+    span_context = SpanContext(
+        trace_id=0x123,
+        span_id=0x456,
+        is_remote=False,
+        trace_flags=TraceFlags(TraceFlags.SAMPLED),
+        trace_state=TraceState(),
+    )
+
+    with use_span(NonRecordingSpan(span_context)):
+        correlated = logging.LogRecord(
+            "test",
+            logging.INFO,
+            __file__,
+            1,
+            "message",
+            (),
+            None,
+        )
+        assert request_filter.filter(correlated) is True
+
+        explicit = logging.LogRecord(
+            "test",
+            logging.INFO,
+            __file__,
+            1,
+            "message",
+            (),
+            None,
+        )
+        explicit.request_id = "explicit-request"  # type: ignore[attr-defined]
+        explicit.trace_id = "explicit-trace"  # type: ignore[attr-defined]
+        explicit.span_id = "explicit-span"  # type: ignore[attr-defined]
+        assert request_filter.filter(explicit) is True
+
+    assert correlated.trace_id == f"{span_context.trace_id:032x}"  # type: ignore[attr-defined]
+    assert correlated.span_id == f"{span_context.span_id:016x}"  # type: ignore[attr-defined]
+    assert explicit.request_id == "explicit-request"  # type: ignore[attr-defined]
+    assert explicit.trace_id == "explicit-trace"  # type: ignore[attr-defined]
+    assert explicit.span_id == "explicit-span"  # type: ignore[attr-defined]

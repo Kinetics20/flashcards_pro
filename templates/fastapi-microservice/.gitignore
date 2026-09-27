@@ -83,3 +83,6 @@ temp/
 *.tmp
 *.bak
 *.orig
+
+.vscode
+.idea

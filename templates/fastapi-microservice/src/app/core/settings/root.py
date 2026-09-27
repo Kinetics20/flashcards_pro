@@ -13,11 +13,15 @@ from app.core.settings.base import (
     reject_unknown_app_dotenv,
     reject_unknown_app_environment,
 )
+from app.core.settings.database import DatabaseSettings
+from app.core.settings.observability import ObservabilitySettings
 from app.core.settings.runtime import HttpSettings, RuntimeSettings
 
 _COMPONENT_TYPES = {
     "runtime": RuntimeSettings,
     "http": HttpSettings,
+    "database": DatabaseSettings,
+    "observability": ObservabilitySettings,
 }
 _KNOWN_ENVIRONMENT_NAMES = known_environment_names(*_COMPONENT_TYPES.values())
 
@@ -29,6 +33,8 @@ class Settings(BaseModel):
 
     runtime: RuntimeSettings
     http: HttpSettings
+    database: DatabaseSettings
+    observability: ObservabilitySettings
 
     def __init__(self, _env_file: Any = DEFAULT_ENV_FILE, **data: Any) -> None:
         reject_unknown_app_environment(_KNOWN_ENVIRONMENT_NAMES)
