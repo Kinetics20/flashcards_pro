@@ -369,14 +369,12 @@ migrate:
 \t@if [ -f alembic.ini ]; then uv run alembic upgrade head; else printf '%s\\n' 'Alembic is not configured for this service.'; exit 2; fi
 
 migration:
-	@if [ ! -f alembic.ini ]; then printf '%s\n' 'Alembic is not configured for this service.'; exit 2; fi
-	@if [ -z "$(name)" ]; then printf '%s\n' 'Usage: make migration name="describe change"'; exit 2; fi
-	uv run alembic revision --autogenerate -m "$(name)"
+\t@if [ ! -f alembic.ini ]; then printf '%s\\n' 'Alembic is not configured for this service.'; exit 2; fi
+\t@if [ -z "$(name)" ]; then printf '%s\\n' 'Usage: make migration name="describe change"'; exit 2; fi
+\tuv run alembic revision --autogenerate -m "$(name)"
 
 migration-check:
 \t@if [ -f alembic.ini ]; then uv run alembic check; else printf '%s\\n' 'Alembic is not configured for this service.'; exit 2; fi
-"""
-    path.write_text(makefile, encoding="utf-8")
 
 
 update_text_files()
