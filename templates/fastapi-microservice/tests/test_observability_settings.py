@@ -86,6 +86,41 @@ def test_invalid_otlp_endpoint_does_not_leak_input() -> None:
     assert _SECRET not in str(error.value)
 
 
+@pytest.mark.parametrize(
+    ("endpoint", "expected_message"),
+    [
+        (
+            f"http://user:{_SECRET}@localhost:4317",
+            "OTLP endpoint must not contain credentials",
+        ),
+        (
+            f"http://localhost:4317?token={_SECRET}",
+            "OTLP endpoint must not contain a query or fragment",
+        ),
+        (
+            f"http://localhost:4317/#{_SECRET}",
+            "OTLP endpoint must not contain a query or fragment",
+        ),
+        (
+            f"http://localhost:4317/v1/{_SECRET}",
+            "OTLP gRPC endpoint must not contain a path",
+        ),
+    ],
+)
+def test_otlp_endpoint_rejects_unsafe_components_without_leaking_input(
+    endpoint: str,
+    expected_message: str,
+) -> None:
+    with pytest.raises(ValidationError, match=expected_message) as error:
+        Settings(
+            _env_file=None,
+            telemetry_enabled=True,
+            telemetry_otlp_endpoint=endpoint,
+        )
+
+    assert _SECRET not in str(error.value)
+
+
 def test_observability_settings_load_from_environment(
     monkeypatch: MonkeyPatch,
 ) -> None:

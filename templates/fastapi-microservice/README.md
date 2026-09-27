@@ -18,14 +18,23 @@ quality foundations without carrying any FrameML business logic.
 - Kubernetes Deployment and Service example
 - Ruff, strict Pyright, pytest coverage, tox, pip-audit, and Sphinx
 - GitHub Actions CI and Dependabot configuration
+- optional PostgreSQL runtime with async SQLAlchemy
+- service-owned Alembic migrations
+- database-aware startup and readiness checks
+- optional OpenTelemetry tracing and metrics over OTLP/gRPC
+- FastAPI and SQLAlchemy instrumentation
+- request, trace, and span correlation in structured logs
 
 The template tracks the latest stable Python feature release and pins current
 stable library/tool versions in `pyproject.toml` and `uv.lock`. Dependabot
 checks Python, Docker, and GitHub Actions updates weekly.
 
-The baseline intentionally has no database, broker, authentication provider,
-or domain example. Add only the infrastructure required by the service you are
-building.
+The baseline includes optional PostgreSQL persistence, service-owned Alembic
+migrations, and OpenTelemetry tracing and metrics. External integrations are
+disabled by default and must be enabled explicitly through APP_ settings.
+
+The template intentionally contains no broker, authentication provider, or
+business-domain example.
 
 ## Create a service from this template
 

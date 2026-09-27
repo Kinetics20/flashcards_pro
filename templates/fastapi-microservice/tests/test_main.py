@@ -6,6 +6,7 @@ from pytest import MonkeyPatch
 from app import main
 from app.core.config import Environment, Settings
 from app.platform.database import DatabaseRuntime
+from app.platform.telemetry import TelemetryRuntime
 
 _DATABASE_URL = "postgresql+asyncpg://flashcards:test-only@localhost:5432/flashcards"
 
@@ -76,18 +77,39 @@ def test_application_factory_binds_enabled_database_runtime(
     assert application.state.database is database
 
 
+def test_application_factory_binds_and_instruments_telemetry(
+    test_settings: Settings,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    telemetry = create_autospec(TelemetryRuntime, instance=True)
+    create_runtime = Mock(return_value=telemetry)
+    monkeypatch.setattr(main, "create_telemetry_runtime", create_runtime)
+
+    application = main.create_app(test_settings)
+
+    create_runtime.assert_called_once_with(
+        test_settings.observability,
+        test_settings.runtime,
+    )
+    assert application.state.telemetry is telemetry
+    telemetry.instrument.assert_called_once_with(application, None)
+
+
 async def test_lifespan_pings_and_closes_enabled_database(
     test_settings: Settings,
 ) -> None:
     application = main.create_app(test_settings)
     database = create_autospec(DatabaseRuntime, instance=True)
+    telemetry = create_autospec(TelemetryRuntime, instance=True)
     application.state.database = database
+    application.state.telemetry = telemetry
 
     async with main.lifespan(application):
         database.ping.assert_awaited_once_with()
         database.close.assert_not_awaited()
 
     database.close.assert_awaited_once_with()
+    telemetry.shutdown.assert_awaited_once_with()
 
 
 async def test_lifespan_closes_database_after_startup_failure(
@@ -95,8 +117,10 @@ async def test_lifespan_closes_database_after_startup_failure(
 ) -> None:
     application = main.create_app(test_settings)
     database = create_autospec(DatabaseRuntime, instance=True)
+    telemetry = create_autospec(TelemetryRuntime, instance=True)
     database.ping.side_effect = RuntimeError("database startup failed")
     application.state.database = database
+    application.state.telemetry = telemetry
 
     with pytest.raises(RuntimeError, match="database startup failed"):
         async with main.lifespan(application):
@@ -104,3 +128,4 @@ async def test_lifespan_closes_database_after_startup_failure(
 
     database.ping.assert_awaited_once_with()
     database.close.assert_awaited_once_with()
+    telemetry.shutdown.assert_awaited_once_with()

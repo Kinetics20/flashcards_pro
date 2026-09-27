@@ -11,6 +11,7 @@ from app.http.middleware import register_middleware
 from app.http.openapi import stable_operation_id
 from app.http.router import root_router
 from app.platform.database import DatabaseRuntime, create_database_runtime
+from app.platform.telemetry import TelemetryRuntime, create_telemetry_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None]:
     """Validate configuration and manage process-level resources."""
     settings: Settings = application.state.settings
     database: DatabaseRuntime | None = application.state.database
+    telemetry: TelemetryRuntime = application.state.telemetry
 
     try:
         configure_logging(settings.runtime.log_level)
@@ -42,7 +44,10 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None]:
             if database is not None:
                 await database.close()
         finally:
-            logger.info("Application stopped")
+            try:
+                await telemetry.shutdown()
+            finally:
+                logger.info("Application stopped")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -58,11 +63,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url="/openapi.json" if docs_enabled else None,
         generate_unique_id_function=stable_operation_id,
     )
+
+    database = create_database_runtime(resolved.database)
+    telemetry = create_telemetry_runtime(resolved.observability, resolved.runtime)
+
     application.state.settings = resolved
-    application.state.database = create_database_runtime(resolved.database)
+    application.state.database = database
+    application.state.telemetry = telemetry
+
     register_middleware(application, resolved.http)
     register_exception_handlers(application)
+
     application.include_router(root_router)
+
+    telemetry.instrument(application, database)
     return application
 
 

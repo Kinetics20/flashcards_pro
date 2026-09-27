@@ -10,3 +10,4 @@ A small production baseline for independently deployable FastAPI services.
    architecture
    operations
    api_reference
+   observability

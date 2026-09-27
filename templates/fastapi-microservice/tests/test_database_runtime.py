@@ -8,8 +8,7 @@ from app.platform.database import (
 )
 
 _DATABASE_URL = (
-    "postgresql+asyncpg://flashcards:"
-    "FCB61_SECRET_MUST_NOT_APPEAR@localhost:5432/flashcards"
+    "postgresql+asyncpg://flashcards:FCB61_SECRET_MUST_NOT_APPEAR@localhost:5432/flashcards"
 )
 
 
