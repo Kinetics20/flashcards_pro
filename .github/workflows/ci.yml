@@ -3,46 +3,48 @@ name: CI
 on:
   pull_request:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
+  schedule:
+    # Monday at 03:17 UTC; GitHub runs schedules from the default branch.
+    - cron: "17 3 * * 1"
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   repository-checks:
     name: Repository checks
     runs-on: ubuntu-latest
-
+    timeout-minutes: 10
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Validate required repository files
-        shell: bash
         run: |
           set -Eeuo pipefail
-
           required_files=(
-            "README.md"
-            "compose.yaml"
-            "contracts/README.md"
-            "infrastructure/README.md"
-            "deploy/helm/README.md"
-            "deploy/terraform/README.md"
-            "docs/README.md"
-            "docs/service-lifecycle.md"
-            "adr/README.md"
-            "scripts/README.md"
-            "scripts/create-service.sh"
-            "scripts/check-service-boundaries.py"
+            "README.md" "compose.yaml" "contracts/README.md"
+            "infrastructure/README.md" "deploy/helm/README.md"
+            "deploy/terraform/README.md" "docs/README.md"
+            "docs/service-lifecycle.md" "adr/README.md" "scripts/README.md"
+            "scripts/create-service.sh" "scripts/check-service-boundaries.py"
+            "security/policy.json" "security/exceptions.json"
+            "security/tools.lock.json" "security/gitleaks.toml"
+            ".ci/security-tools/pyproject.toml" ".ci/security-tools/uv.lock"
+            "docs/security-quality-gates.md"
           )
-
           for required_file in "${required_files[@]}"; do
             if [[ ! -s "$required_file" ]]; then
               echo "::error file=${required_file}::Required file is missing or empty"
@@ -50,10 +52,8 @@ jobs:
             fi
           done
 
-      - name: Validate service generator syntax
-        shell: bash
+      - name: Validate service generator syntax and executable permission
         run: |
-          set -Eeuo pipefail
           bash -n scripts/create-service.sh
           test -x scripts/create-service.sh
 
@@ -63,242 +63,329 @@ jobs:
       - name: Validate Docker Compose
         run: docker compose config --quiet
 
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.11"
+          python-version: "3.14.7"
+          enable-cache: true
+          cache-dependency-glob: .ci/security-tools/uv.lock
+
+      - name: Validate security policy and exceptions
+        run: uv run --project .ci/security-tools --frozen python -m scripts.security.gate validate-policy --root .
+
   discover-services:
     name: Discover services
     runs-on: ubuntu-latest
-
+    timeout-minutes: 10
     outputs:
       services: ${{ steps.discover.outputs.services }}
-
+      targets: ${{ steps.discover.outputs.targets }}
+      images: ${{ steps.discover.outputs.images }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7.0.1
-
-      - name: Build service matrix
-        id: discover
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          python3 <<'PY'
-          import json
-          import os
-          import re
-          from pathlib import Path
-
-          service_pattern = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
-
-          services = sorted(
-              path.parent.name
-              for path in Path("services").glob("*/pyproject.toml")
-          )
-
-          if not services:
-              raise SystemExit("No services were found under services/")
-
-          invalid = [
-              service
-              for service in services
-              if service_pattern.fullmatch(service) is None
-          ]
-
-          if invalid:
-              raise SystemExit(
-                  f"Invalid service directory names: {', '.join(invalid)}"
-              )
-
-          output_file = Path(os.environ["GITHUB_OUTPUT"])
-          with output_file.open("a", encoding="utf-8") as output:
-              output.write(f"services={json.dumps(services)}\n")
-
-          print(f"Discovered services: {', '.join(services)}")
-          PY
-
-  service-quality:
-    name: Quality — ${{ matrix.service }}
-    needs:
-      - discover-services
-
-    runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        service: ${{ fromJSON(needs.discover-services.outputs.services) }}
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@v10.0.1
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: "0.12.11"
-          enable-cache: true
           python-version: "3.14.7"
-          cache-dependency-glob: services/${{ matrix.service }}/uv.lock
+          enable-cache: true
+          cache-dependency-glob: .ci/security-tools/uv.lock
 
-      - name: Install locked dependencies
-        working-directory: services/${{ matrix.service }}
-        run: uv sync --all-groups --frozen
+      - name: Write expected target manifest and matrices
+        id: discover
+        run: |
+          uv run --project .ci/security-tools --frozen python -m scripts.security.discover_targets \
+            --root . --output reports/manifest.json \
+            --github-output "$GITHUB_OUTPUT"
 
-      - name: Audit dependencies
-        working-directory: services/${{ matrix.service }}
-        run: uv run pip-audit --skip-editable
-
-      - name: Run quality gate
-        working-directory: services/${{ matrix.service }}
-        run: uv run tox run-parallel
-
-      - name: Upload coverage report
+      - name: Upload expected manifest
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: coverage-${{ matrix.service }}
-          path: services/${{ matrix.service }}/coverage.xml
-          if-no-files-found: ignore
-          retention-days: 7
+          name: evidence-manifest
+          path: reports/
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'schedule' && 90 || 30 }}
 
-  service-container:
-    name: Container — ${{ matrix.service }}
-    needs:
-      - discover-services
-
+  service-quality:
+    name: Quality — ${{ matrix.target }}
+    needs: [discover-services]
     runs-on: ubuntu-latest
-
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        service: ${{ fromJSON(needs.discover-services.outputs.services) }}
-
+        target: ${{ fromJSON(needs.discover-services.outputs.targets) }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Build service image
-        shell: bash
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.11"
+          python-version: "3.14.7"
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+
+      - name: Install locked CI tools
+        run: uv sync --project .ci/security-tools --frozen
+
+      - name: Run tests, lint, types and documentation; record test evidence
+        env:
+          TARGET_ID: ${{ matrix.target }}
+        run: |
+          uv run --project .ci/security-tools --frozen python \
+            -m scripts.security.run_scans --phase tests \
+            --root . --target "$TARGET_ID" --output reports
+
+      - name: Lint and format-check repository security automation
+        if: ${{ !cancelled() && matrix.target == 'repo-security-tools' }}
+        run: |
+          uv run --project .ci/security-tools --frozen ruff check \
+            --config .ci/security-tools/pyproject.toml scripts/security scripts/tests
+          uv run --project .ci/security-tools --frozen ruff format --check \
+            --config .ci/security-tools/pyproject.toml scripts/security scripts/tests
+
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: evidence-tests-${{ matrix.target }}
+          path: reports/
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'schedule' && 90 || 30 }}
+
+  python-security:
+    name: Dependencies and licenses — ${{ matrix.target }}
+    needs: [discover-services]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.discover-services.outputs.targets) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.11"
+          python-version: "3.14.7"
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+
+      - name: Install locked CI tools
+        run: uv sync --project .ci/security-tools --frozen
+
+      - name: Audit every locked dependency group and Python package license
+        env:
+          TARGET_ID: ${{ matrix.target }}
+        run: |
+          uv run --project .ci/security-tools --frozen python \
+            -m scripts.security.run_scans --phase python \
+            --root . --target "$TARGET_ID" --output reports --install-tools
+
+      - name: Upload dependency and license evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: evidence-python-${{ matrix.target }}
+          path: reports/
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'schedule' && 90 || 30 }}
+
+  repository-security:
+    name: Secrets, IaC and Compose security
+    needs: [discover-services]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out full history for secret scanning
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.11"
+          python-version: "3.14.7"
+          enable-cache: true
+          cache-dependency-glob: .ci/security-tools/uv.lock
+
+      - name: Install locked CI tools
+        run: uv sync --project .ci/security-tools --frozen
+
+      - name: Scan full repository
+        run: |
+          uv run --project .ci/security-tools --frozen python \
+            -m scripts.security.run_scans --phase repository \
+            --root . --output reports --install-tools
+
+      - name: Upload redacted repository evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: evidence-repository
+          path: reports/
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'schedule' && 90 || 30 }}
+
+  service-container:
+    name: Container — ${{ matrix.target }}
+    needs: [discover-services]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.discover-services.outputs.images) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.11"
+          python-version: "3.14.7"
+          enable-cache: true
+          cache-dependency-glob: .ci/security-tools/uv.lock
+
+      - name: Install locked CI tools
+        run: uv sync --project .ci/security-tools --frozen
+
+      - name: Resolve image build context from manifest
+        id: context
+        env:
+          TARGET_ID: ${{ matrix.target }}
+        run: |
+          uv run --project .ci/security-tools --frozen python - <<'PY'
+          import os
+          from pathlib import Path
+          from scripts.security.discover_targets import discover
+
+          manifest = discover(Path.cwd())
+          target = next(t for t in manifest["targets"] if t["id"] == os.environ["TARGET_ID"])
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"path={target['path']}\n")
+          PY
+
+      - name: Build image once and record immutable local image ID
+        id: image
+        env:
+          BUILD_CONTEXT: ${{ steps.context.outputs.path }}
+          IMAGE_TAG: flashcards-${{ matrix.target }}:${{ github.sha }}
         run: |
           set -Eeuo pipefail
+          docker build --tag "$IMAGE_TAG" "$BUILD_CONTEXT"
+          image_id="$(docker image inspect --format '{{.Id}}' "$IMAGE_TAG")"
+          echo "id=$image_id" >> "$GITHUB_OUTPUT"
 
-          docker build \
-            --tag "flashcards-${{ matrix.service }}:${{ github.sha }}" \
-            "services/${{ matrix.service }}"
-
-      - name: Run container smoke test
-        shell: bash
+      - name: Run container smoke test against the same image
+        env:
+          IMAGE_ID: ${{ steps.image.outputs.id }}
         run: |
           set -Eeuo pipefail
-
-          image="flashcards-${{ matrix.service }}:${{ github.sha }}"
-          container_id="$(docker run \
-            --detach \
-            --publish 127.0.0.1::8000 \
-            --env APP_ENVIRONMENT=test \
-            "$image")"
-
+          container_id="$(docker run --detach --publish 127.0.0.1::8000 \
+            --env APP_ENVIRONMENT=test "$IMAGE_ID")"
           cleanup() {
             docker logs "$container_id" || true
             docker rm --force "$container_id" >/dev/null 2>&1 || true
           }
-
           trap cleanup EXIT
-
           host_port="$(docker inspect \
             --format '{{(index (index .NetworkSettings.Ports "8000/tcp") 0).HostPort}}' \
             "$container_id")"
-
-          curl \
-            --fail \
-            --show-error \
-            --retry 20 \
-            --retry-delay 1 \
-            --retry-all-errors \
+          curl --fail --show-error --retry 20 --retry-delay 1 --retry-all-errors \
             "http://127.0.0.1:${host_port}/health/live"
-
-          curl \
-            --fail \
-            "http://127.0.0.1:${host_port}/health/ready"
-
-          curl \
-            --fail \
-            "http://127.0.0.1:${host_port}/api/v1/status"
-
+          curl --fail --show-error "http://127.0.0.1:${host_port}/health/ready"
+          curl --fail --show-error "http://127.0.0.1:${host_port}/api/v1/status"
           docker stop --time 10 "$container_id"
-
-          exit_code="$(docker inspect \
-            --format '{{.State.ExitCode}}' \
-            "$container_id")"
-
+          exit_code="$(docker inspect --format '{{.State.ExitCode}}' "$container_id")"
           if [[ "$exit_code" != "0" ]]; then
             echo "::error::Container exited with code ${exit_code}"
             exit 1
           fi
 
+      - name: Scan built image and export SBOM even if smoke test failed
+        if: ${{ !cancelled() && steps.image.outcome == 'success' }}
+        env:
+          TARGET_ID: ${{ matrix.target }}
+          IMAGE_ID: ${{ steps.image.outputs.id }}
+        run: |
+          uv run --project .ci/security-tools --frozen python \
+            -m scripts.security.run_scans --phase image --root . \
+            --target "$TARGET_ID" --image "$IMAGE_ID" --output reports --install-tools
+
+      - name: Upload image scan and SBOM evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: evidence-image-${{ matrix.target }}
+          path: reports/
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'schedule' && 90 || 30 }}
+
   template-conformance:
     name: Template conformance
     runs-on: ubuntu-latest
-
+    timeout-minutes: 30
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@v10.0.1
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: "0.12.11"
-          enable-cache: true
           python-version: "3.14.7"
+          enable-cache: true
           cache-dependency-glob: templates/fastapi-microservice/uv.lock
 
       - name: Generate sample service
-        shell: bash
         run: |
           set -Eeuo pipefail
-
           bash -n scripts/create-service.sh
+          ./scripts/create-service.sh ci-sample-service "CI Sample Service" \
+            --owner platform-team --output "$RUNNER_TEMP/ci-sample-service"
 
-          ./scripts/create-service.sh \
-            ci-sample-service \
-            "CI Sample Service" \
-            --owner platform-team \
-            --output "$RUNNER_TEMP/ci-sample-service"
-
-      - name: Validate generated structure
-        shell: bash
+      - name: Validate generated structure and excluded local evidence
         run: |
           set -Eeuo pipefail
-
           generated="$RUNNER_TEMP/ci-sample-service"
-
           required_files=(
-            "pyproject.toml"
-            "uv.lock"
-            "Dockerfile"
-            "README.md"
-            "OWNERS.yaml"
-            "TEMPLATE_METADATA.yaml"
-            "Makefile"
-            ".env.example"
-            "src/app/main.py"
+            "pyproject.toml" "uv.lock" "Dockerfile" "README.md" "OWNERS.yaml"
+            "TEMPLATE_METADATA.yaml" "Makefile" ".env.example" "src/app/main.py"
           )
-
           for required_file in "${required_files[@]}"; do
             if [[ ! -s "${generated}/${required_file}" ]]; then
-              echo "::error file=${generated}/${required_file}::Generated file is missing or empty"
+              echo "::error::Generated file is missing or empty: ${required_file}"
               exit 1
             fi
           done
-
-          test ! -e "${generated}/.git"
-          test ! -e "${generated}/.github"
-          test ! -e "${generated}/compose.yaml"
-          test ! -e "${generated}/deploy"
-
-          if rg -n \
-            --glob '!README.md' \
-            --glob '!TEMPLATE_METADATA.yaml' \
-            "FastAPI Microservice|fastapi-microservice" \
-            "$generated"; then
+          for excluded in .git .github .venv .tox reports .coverage coverage.xml coverage.json htmlcov compose.yaml deploy; do
+            test ! -e "${generated}/${excluded}"
+          done
+          if rg -n --glob '!README.md' --glob '!TEMPLATE_METADATA.yaml' \
+            "FastAPI Microservice|fastapi-microservice" "$generated"; then
             echo "::error::Unresolved template identity found"
             exit 1
           fi
@@ -306,6 +393,7 @@ jobs:
       - name: Test generated service
         working-directory: ${{ runner.temp }}/ci-sample-service
         run: |
+          set -Eeuo pipefail
           uv lock --check
           uv sync --all-groups --frozen
           make lint
@@ -316,30 +404,127 @@ jobs:
 
       - name: Build generated service image
         working-directory: ${{ runner.temp }}/ci-sample-service
+        env:
+          IMAGE_TAG: flashcards-ci-sample:${{ github.sha }}
+        run: make image-build IMAGE="$IMAGE_TAG"
+
+  scanner-self-tests:
+    name: Scanner negative integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.11"
+          python-version: "3.14.7"
+          enable-cache: true
+          cache-dependency-glob: .ci/security-tools/uv.lock
+
+      - name: Install locked CI tools
+        run: uv sync --project .ci/security-tools --frozen
+
+      - name: Require actual detection of synthetic secret and known vulnerable dependency fixture
         run: |
-          make image-build IMAGE=flashcards-ci-sample:${{ github.sha }}
+          uv run --project .ci/security-tools --frozen python \
+            -m scripts.security.run_scans --root . --output reports \
+            --install-tools --self-test-scanners
+
+      - name: Upload scanner self-test evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: evidence-scanner-self-tests
+          path: reports/
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'schedule' && 90 || 30 }}
+
+  security-and-coverage:
+    name: Security policy and aggregate coverage
+    if: always()
+    needs:
+      - discover-services
+      - service-quality
+      - python-security
+      - repository-security
+      - service-container
+      - scanner-self-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.11"
+          python-version: "3.14.7"
+          enable-cache: true
+          cache-dependency-glob: .ci/security-tools/uv.lock
+
+      - name: Download evidence from this workflow run only
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: evidence-*
+          path: reports
+          merge-multiple: true
+
+      - name: Verify complete scan evidence and evaluate policy
+        if: ${{ !cancelled() }}
+        run: |
+          uv run --project .ci/security-tools --frozen python -m scripts.security.gate evaluate --root . \
+            --manifest reports/manifest.json --reports reports
+
+      - name: Aggregate exact line and branch counters
+        if: ${{ !cancelled() }}
+        run: |
+          uv run --project .ci/security-tools --frozen python -m scripts.security.aggregate_coverage \
+            --root . --manifest reports/manifest.json --reports reports
+
+      - name: Publish evaluated evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: security-quality-results
+          path: reports/
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'schedule' && 90 || 30 }}
 
   ci-success:
     name: CI success
     if: always()
-
     needs:
       - repository-checks
       - discover-services
       - service-quality
+      - python-security
+      - repository-security
       - service-container
       - template-conformance
-
+      - scanner-self-tests
+      - security-and-coverage
     runs-on: ubuntu-latest
-
+    timeout-minutes: 5
     steps:
-      - name: Verify all jobs succeeded
-        shell: bash
+      - name: Require every job to succeed, including evidence aggregation
+        env:
+          JOB_RESULTS: ${{ toJSON(needs) }}
         run: |
-          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          import os
 
-          test "${{ needs.repository-checks.result }}" = "success"
-          test "${{ needs.discover-services.result }}" = "success"
-          test "${{ needs.service-quality.result }}" = "success"
-          test "${{ needs.service-container.result }}" = "success"
-          test "${{ needs.template-conformance.result }}" = "success"
+          results = json.loads(os.environ["JOB_RESULTS"])
+          failed = [name for name, job in results.items() if job["result"] != "success"]
+          if failed:
+              raise SystemExit("Required jobs did not succeed: " + ", ".join(failed))
+          print("All required repository, quality, security and conformance checks passed.")
+          PY
