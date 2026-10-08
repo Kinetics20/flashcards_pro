@@ -662,3 +662,38 @@ def test_compose_cli(tmp_path, monkeypatch, capsys):
     document.write_text("invalid secret-input")
     assert scan_compose.main() == 2
     assert "secret-input" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("package", "version", "raw_license", "allowed"),
+    [
+        ("Jinja2", "3.1.6", "BSD License", True),
+        ("Jinja2", "3.1.7", "BSD License", False),
+        ("another-package", "3.1.6", "BSD License", False),
+        ("Jinja2", "3.1.6", "UNKNOWN", False),
+    ],
+)
+def test_license_alias_is_scoped_to_package_version_and_declaration(
+    policy,
+    exceptions,
+    package,
+    version,
+    raw_license,
+    allowed,
+):
+    policy["licenses"]["aliases"]["Jinja2==3.1.6::BSD License"] = "BSD-3-Clause"
+
+    data = report(
+        "licenses",
+        [
+            finding(
+                "UNKNOWN",
+                package=package,
+                version=version,
+                license=raw_license,
+            )
+        ],
+    )
+
+    errors = gate.evaluate_report(data, policy, exceptions, NOW)
+    assert (errors == []) is allowed

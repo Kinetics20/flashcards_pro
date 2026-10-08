@@ -66,8 +66,8 @@ jobs:
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.11"
-          python-version: "3.14.7"
+          version: "0.12.18"
+          python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: .ci/security-tools/uv.lock
 
@@ -91,8 +91,8 @@ jobs:
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.11"
-          python-version: "3.14.7"
+          version: "0.12.18"
+          python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: .ci/security-tools/uv.lock
 
@@ -130,8 +130,8 @@ jobs:
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.11"
-          python-version: "3.14.7"
+          version: "0.12.18"
+          python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: "**/uv.lock"
 
@@ -181,8 +181,8 @@ jobs:
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.11"
-          python-version: "3.14.7"
+          version: "0.12.18"
+          python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: "**/uv.lock"
 
@@ -221,8 +221,8 @@ jobs:
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.11"
-          python-version: "3.14.7"
+          version: "0.12.18"
+          python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: .ci/security-tools/uv.lock
 
@@ -262,8 +262,8 @@ jobs:
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.11"
-          python-version: "3.14.7"
+          version: "0.12.18"
+          python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: .ci/security-tools/uv.lock
 
@@ -355,8 +355,8 @@ jobs:
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.11"
-          python-version: "3.14.7"
+          version: "0.12.18"
+          python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: templates/fastapi-microservice/uv.lock
 
@@ -421,8 +421,8 @@ jobs:
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.11"
-          python-version: "3.14.7"
+          version: "0.12.18"
+          python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: .ci/security-tools/uv.lock
 
@@ -439,7 +439,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: evidence-scanner-self-tests
+          name: scanner-self-test-results
           path: reports/
           if-no-files-found: error
           retention-days: ${{ github.event_name == 'schedule' && 90 || 30 }}
@@ -465,8 +465,8 @@ jobs:
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.11"
-          python-version: "3.14.7"
+          version: "0.12.18"
+          python-version: "syste"
           enable-cache: true
           cache-dependency-glob: .ci/security-tools/uv.lock
 

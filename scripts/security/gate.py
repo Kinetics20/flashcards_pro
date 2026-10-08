@@ -343,7 +343,12 @@ def evaluate_report(
         check = report["check"]
         if check == "licenses":
             raw_license = finding["license"].strip()
-            expression = policy["licenses"]["aliases"].get(raw_license, raw_license)
+            aliases = policy["licenses"]["aliases"]
+            scoped_key = f"{finding['package']}=={finding['version']}::{raw_license}"
+            expression = aliases.get(
+                scoped_key,
+                aliases.get(raw_license, raw_license),
+            )
             blocked = expression not in policy["licenses"]["approved_expressions"]
         elif check in {"secrets", "dependencies", "tests"}:
             blocked = True
