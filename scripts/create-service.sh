@@ -159,6 +159,12 @@ rsync -a \
     --exclude='.git/' \
     --exclude='.github/' \
     --exclude='.venv/' \
+    --exclude='.tox/' \
+    --exclude='reports/' \
+    --exclude='.coverage*' \
+    --exclude='coverage.xml' \
+    --exclude='coverage.json' \
+    --exclude='htmlcov/' \
     --exclude='.env' \
     --exclude='.pytest_cache/' \
     --exclude='.ruff_cache/' \

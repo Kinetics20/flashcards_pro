@@ -1,0 +1,4 @@
+title = "Flashcards secret scanning"
+
+[extend]
+useDefault = true

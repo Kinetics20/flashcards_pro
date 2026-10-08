@@ -1,0 +1,36 @@
+[project]
+name = "flashcards-security-tools"
+version = "0.1.0"
+description = "Isolated, locked repository security and reporting tools"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "coverage==7.16.0",
+    "pip-audit==2.10.1",
+    "pip-licenses==5.5.5",
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "ruff==0.16.6",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+markers = ["integration: executes real pinned scanners and may use the network"]
+
+[tool.coverage.run]
+branch = true
+source = ["scripts/security"]
+
+[tool.coverage.report]
+fail_under = 90
+precision = 2
+show_missing = true
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

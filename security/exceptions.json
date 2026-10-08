@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "exceptions": [
+    {
+  "id": "license-content-docutils-0-22-4",
+  "check": "licenses",
+  "target": "content-service",
+  "finding_id": "license:docutils",
+  "package": "docutils",
+  "version": "0.22.4",
+  "owner": "piotrlipinski",
+  "reason": "The scanner reports a combined license classification that cannot be mapped to a single approved expression. The exact release has been reviewed for documentation-only use; review evidence and follow-up are recorded in FCB-62.",
+  "tracking_issue": "FCB-62",
+  "created_at": "2026-10-08",
+  "expires_at": "2026-11-07",
+  "compensating_control": "docutils is restricted to documentation tooling and excluded from the application runtime image. Required license notices are retained, and version 0.22.4 remains pinned for the duration of this exception."
+},
+{
+  "id": "license-template-docutils-0-22-4",
+  "check": "licenses",
+  "target": "template-fastapi",
+  "finding_id": "license:docutils",
+  "package": "docutils",
+  "version": "0.22.4",
+  "owner": "piotrlipinski",
+  "reason": "The scanner reports a combined license classification that cannot be mapped to a single approved expression. The exact release has been reviewed for documentation-only use; review evidence and follow-up are recorded in FCB-62.",
+  "tracking_issue": "FCB-62",
+  "created_at": "2026-10-08",
+  "expires_at": "2026-11-07",
+  "compensating_control": "docutils is restricted to documentation tooling and excluded from the application runtime image. Required license notices are retained, and version 0.22.4 remains pinned for the duration of this exception."
+}
+  ]
+}

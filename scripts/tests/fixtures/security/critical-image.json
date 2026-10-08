@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "target": "content-service",
+  "check": "image",
+  "tool": {"name": "synthetic-fixture", "version": "1"},
+  "status": "ok",
+  "findings": [{
+    "id": "SYNTHETIC-CRITICAL-001",
+    "severity": "CRITICAL",
+    "package": "fixture-only-package",
+    "version": "1.0.0",
+    "path": "fixture/metadata"
+  }],
+  "errors": [],
+  "artifacts": [{
+    "path": "content-service/raw-image.json",
+    "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  }]
+}
