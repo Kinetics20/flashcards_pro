@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "verified_on": "2026-10-07",
+  "tools": {
+    "gitleaks": {
+      "version": "8.30.1",
+      "release": "https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1",
+      "platforms": {
+        "linux-amd64": {
+          "url": "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz",
+          "sha256": "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        },
+        "darwin-arm64": {
+          "url": "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_darwin_arm64.tar.gz",
+          "sha256": "b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5"
+        }
+      }
+    },
+    "trivy": {
+      "version": "0.75.0",
+      "release": "https://github.com/aquasecurity/trivy/releases/tag/v0.75.0",
+      "platforms": {
+        "linux-amd64": {
+          "url": "https://github.com/aquasecurity/trivy/releases/download/v0.75.0/trivy_0.75.0_Linux-64bit.tar.gz",
+          "sha256": "c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f"
+        },
+        "darwin-arm64": {
+          "url": "https://github.com/aquasecurity/trivy/releases/download/v0.75.0/trivy_0.75.0_macOS-ARM64.tar.gz",
+          "sha256": "4a77108cccf8e55c8d6823e1e759939a622277e66cd0daa3c1fc621ed69e4568"
+        }
+      }
+    }
+  },
+  "python_tools": {
+    "pip-audit": "2.10.1",
+    "pip-licenses": "5.5.5"
+  },
+  "provenance": "Archive SHA256 values verified against the official GitHub Release Assets API. Python tools and their transitive dependencies are installed only from the repository uv.lock."
+}

@@ -1,0 +1,20 @@
+.vscode
+.idea
+
+.DS_Store
+
+[8:35 PM]# Local test/security evidence is published as CI artifacts, not source code.
+/reports/
+**/reports/
+/.ci/security-tools/.venv/
+/.ci/security-tools/.tools/
+/.cache/security-tools/
+/.cache/security-tools/
+**/.coverage*
+**/coverage.xml
+**/coverage.json
+**/htmlcov/
+**/.tox/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/

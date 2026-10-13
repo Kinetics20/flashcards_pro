@@ -1,0 +1,26 @@
+{
+  "artifacts": [],
+  "check": "image",
+  "commit": "ab2056d274cceb5373c86f1e54fcbfc428bb8ff8",
+  "errors": [
+    "docker: unexpected exit code 1"
+  ],
+  "findings": [],
+  "run_context": {
+    "inputs": {
+      "security/exceptions.json": "9418c81ae6817779a7bf3c06b45b29ce7494cb5759e4dfb3e22bd6a9b9810cb9",
+      "security/gitleaks.toml": "644c0b7f7838b2bf560fbabbb1f1566640ccf02414b416309913184dc3fcb13e",
+      "security/policy.json": "66927d40a3b63d3ac66c553d59f00b8bfee1e8becae1bdef769d8f26de5a0f84",
+      "security/tools.lock.json": "a6f8ff729ab0b1515b769bad9c572df09c1695b48f09b3c6bdf1227230197427"
+    },
+    "run_attempt": "1",
+    "run_id": "local"
+  },
+  "schema_version": 1,
+  "status": "error",
+  "target": "content-service",
+  "tool": {
+    "name": "trivy",
+    "version": "0.75.0"
+  }
+}
