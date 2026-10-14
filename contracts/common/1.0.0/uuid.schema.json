@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TransportUuid",
+  "description": "A UUID transport identifier. It does not imply a domain entity type.",
+  "type": "string",
+  "format": "uuid",
+  "examples": ["8ae1d43c-41b4-4b52-a51e-464f0d8d8878"]
+}

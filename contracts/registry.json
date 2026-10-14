@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "contracts": [
+    {
+      "id": "content-api",
+      "kind": "openapi",
+      "version": "0.1.0",
+      "owner": "backend-team",
+      "producer": "content-service",
+      "consumers": [],
+      "scope": "internal",
+      "schema_path": "contracts/openapi/content-service/0.1.0/openapi.json",
+      "lifecycle": "active",
+      "deprecation": null
+    },
+    {
+      "id": "reference-event",
+      "kind": "event",
+      "version": "1.0.0",
+      "owner": "backend-team",
+      "producer": "content-service",
+      "consumers": [],
+      "scope": "reference",
+      "schema_path": "contracts/events/reference/1.0.0/schema.json",
+      "lifecycle": "active",
+      "deprecation": null
+    }
+  ]
+}

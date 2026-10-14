@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ErrorEnvelope",
+  "description": "Shared structured-error transport shape. OpenAPI is authoritative for which existing responses use it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["error"],
+  "properties": {
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {"type": "string"},
+        "message": {"type": "string"},
+        "request_id": {"type": ["string", "null"]},
+        "details": {}
+      }
+    }
+  },
+  "examples": [{"error": {"code": "NOT_FOUND", "message": "Resource not found"}}]
+}

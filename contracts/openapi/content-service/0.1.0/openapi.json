@@ -1,0 +1,276 @@
+{
+  "components": {
+    "schemas": {
+      "Environment": {
+        "description": "Supported runtime environments.",
+        "enum": [
+          "local",
+          "test",
+          "staging",
+          "production"
+        ],
+        "title": "Environment",
+        "type": "string"
+      },
+      "ErrorDetail": {
+        "additionalProperties": false,
+        "description": "Stable machine- and human-readable description of an API error.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "details": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorDetail",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "additionalProperties": false,
+        "description": "Envelope returned by global exception handlers.",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "HealthCheck": {
+        "additionalProperties": false,
+        "description": "Safe status of one process or dependency check.",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/HealthStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "HealthCheck",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "additionalProperties": false,
+        "description": "Response returned by health endpoints.",
+        "properties": {
+          "checks": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/HealthCheck"
+            },
+            "title": "Checks",
+            "type": "object"
+          },
+          "status": {
+            "$ref": "#/components/schemas/HealthStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "HealthStatus": {
+        "description": "Health endpoint states.",
+        "enum": [
+          "ok",
+          "unavailable"
+        ],
+        "title": "HealthStatus",
+        "type": "string"
+      },
+      "ServiceStatusResponse": {
+        "additionalProperties": false,
+        "description": "Public service identity and availability.",
+        "properties": {
+          "environment": {
+            "$ref": "#/components/schemas/Environment"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "environment"
+        ],
+        "title": "ServiceStatusResponse",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Flashcards Content Service",
+    "version": "0.1.0",
+    "x-contract": {
+      "consumers": [],
+      "deprecation": null,
+      "id": "content-api",
+      "lifecycle": "active",
+      "owner": "backend-team",
+      "producer": "content-service",
+      "scope": "internal"
+    }
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/status": {
+      "get": {
+        "description": "Return non-secret service identity and availability metadata.",
+        "operationId": "get_api_v1_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The request cannot be completed."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication failed."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The operation is not permitted."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "A dependency is unavailable."
+          }
+        },
+        "summary": "Get service status",
+        "tags": [
+          "status"
+        ]
+      }
+    },
+    "/health/live": {
+      "get": {
+        "description": "Report whether the API process is running.",
+        "operationId": "get_health_live",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Check process liveness",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "description": "Report whether configured resources can serve traffic.\n\nAdd required dependency checks here when the service gains a database or\nanother startup-critical resource. Transient downstream services should\nnormally be reported separately and should not remove a replica from load.",
+        "operationId": "get_health_ready",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Check traffic readiness",
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  }
+}

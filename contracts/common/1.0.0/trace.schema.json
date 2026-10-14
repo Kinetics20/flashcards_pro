@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TraceContext",
+  "description": "Optional W3C version-00 trace context and request correlation identifier.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["traceparent"],
+  "properties": {
+    "traceparent": {
+      "type": "string",
+      "pattern": "^00-(?!0{32}-)[0-9a-f]{32}-(?!0{16}-)[0-9a-f]{16}-[0-9a-f]{2}$"
+    },
+    "request_id": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,128}$"}
+  },
+  "examples": [{"traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}]
+}
