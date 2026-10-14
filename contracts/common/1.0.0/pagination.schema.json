@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CursorPagination",
+  "description": "Convention for future cursor-based collection responses; no collection endpoint exists yet. Cursors are opaque.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["limit", "next_cursor"],
+  "properties": {
+    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+    "next_cursor": {"type": ["string", "null"], "minLength": 1, "maxLength": 512}
+  },
+  "examples": [{"limit": 20, "next_cursor": null}]
+}

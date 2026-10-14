@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UtcTimestamp",
+  "description": "RFC 3339 timestamp normalized to UTC with an uppercase Z suffix.",
+  "type": "string",
+  "format": "date-time",
+  "pattern": "Z$",
+  "examples": ["2026-10-13T00:00:00Z"]
+}

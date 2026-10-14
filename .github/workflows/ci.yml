@@ -44,6 +44,7 @@ jobs:
             "security/tools.lock.json" "security/gitleaks.toml"
             ".ci/security-tools/pyproject.toml" ".ci/security-tools/uv.lock"
             "docs/security-quality-gates.md"
+            "contracts/registry.json" "docs/contract-registry.md"
           )
           for required_file in "${required_files[@]}"; do
             if [[ ! -s "$required_file" ]]; then
@@ -146,13 +147,13 @@ jobs:
             -m scripts.security.run_scans --phase tests \
             --root . --target "$TARGET_ID" --output reports
 
-      - name: Lint and format-check repository security automation
+      - name: Lint and format-check repository automation
         if: ${{ !cancelled() && matrix.target == 'repo-security-tools' }}
         run: |
           uv run --project .ci/security-tools --frozen ruff check \
-            --config .ci/security-tools/pyproject.toml scripts/security scripts/tests
+            --config .ci/security-tools/pyproject.toml scripts/security scripts/contracts scripts/tests
           uv run --project .ci/security-tools --frozen ruff format --check \
-            --config .ci/security-tools/pyproject.toml scripts/security scripts/tests
+            --config .ci/security-tools/pyproject.toml scripts/security scripts/contracts scripts/tests
 
       - name: Upload test evidence
         if: always()
@@ -162,6 +163,53 @@ jobs:
           path: reports/
           if-no-files-found: error
           retention-days: ${{ github.event_name == 'schedule' && 90 || 30 }}
+
+  contract-registry:
+    name: Contract registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.23"
+          python-version: "3.14.8"
+          enable-cache: true
+          cache-dependency-glob: |
+            .ci/security-tools/uv.lock
+            services/content-service/uv.lock
+
+      - name: Install locked contract tools and reference service
+        run: |
+          uv sync --project .ci/security-tools --frozen
+          uv sync --project services/content-service --all-groups --frozen
+
+      - name: Validate registry and require reproducible committed outputs
+        run: |
+          uv run --project .ci/security-tools --no-sync python -m scripts.contracts.validate --root .
+          uv run --project .ci/security-tools --no-sync python -m scripts.contracts.build --root . --check
+
+      - name: Exercise actual API and generated transport models
+        run: |
+          uv run --project .ci/security-tools --no-sync python -m pytest \
+            -c .ci/security-tools/pyproject.toml scripts/tests/integration/test_contract_registry.py \
+            --junitxml=reports/contracts/junit.xml
+
+      - name: Publish browsable contract reference and test results
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: contract-registry-reference
+          path: |
+            contracts/generated/docs/
+            reports/contracts/
+          if-no-files-found: error
+          retention-days: 30
 
   python-security:
     name: Dependencies and licenses — ${{ matrix.target }}
@@ -511,6 +559,7 @@ jobs:
       - template-conformance
       - scanner-self-tests
       - security-and-coverage
+      - contract-registry
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReferenceServiceStatusObserved",
+  "description": "REFERENCE ONLY. Not emitted or consumed in production. Demonstrates local schema references and code generation without inventing domain events.",
+  "x-reference-only": true,
+  "type": "object",
+  "required": ["version", "source"],
+  "properties": {
+    "version": {"const": "1.0.0"},
+    "source": {"const": "content-service"}
+  },
+  "allOf": [
+    {"$ref": "../../../common/1.0.0/envelope.schema.json"},
+    {
+      "type": "object",
+      "properties": {
+        "type": {"const": "reference.service-status-observed"},
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status"],
+          "properties": {"status": {"const": "ok"}}
+        }
+      }
+    }
+  ],
+  "examples": [{
+    "id": "8ae1d43c-41b4-4b52-a51e-464f0d8d8878",
+    "type": "reference.service-status-observed",
+    "version": "1.0.0",
+    "source": "content-service",
+    "occurred_at": "2026-10-13T00:00:00Z",
+    "data": {"status": "ok"}
+  }]
+}
