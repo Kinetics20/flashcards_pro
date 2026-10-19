@@ -24,6 +24,18 @@
       "schema_path": "contracts/events/reference/1.0.0/schema.json",
       "lifecycle": "active",
       "deprecation": null
+    },
+    {
+      "id": "reference-event-v2",
+      "kind": "event",
+      "version": "2.0.0",
+      "owner": "backend-team",
+      "producer": "content-service",
+      "consumers": [],
+      "scope": "reference",
+      "schema_path": "contracts/events/reference/2.0.0/schema.json",
+      "lifecycle": "active",
+      "deprecation": null
     }
   ]
 }

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReferenceStatusV2",
+  "description": "REFERENCE ONLY. Executed by contract fixtures, not a production domain publisher or outbox. V1 remains supported separately.",
+  "x-reference-only": true,
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "type", "version", "source", "aggregate_id", "aggregate_sequence", "occurred_at", "trace", "data"],
+  "properties": {
+    "id": {"$ref": "../../../common/1.0.0/uuid.schema.json"},
+    "type": {"const": "reference.service-status-observed"},
+    "version": {"const": "2.0.0"},
+    "source": {"const": "content-service"},
+    "aggregate_id": {"$ref": "../../../common/1.0.0/uuid.schema.json"},
+    "aggregate_sequence": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+    "occurred_at": {"$ref": "../../../common/1.0.0/timestamp.schema.json"},
+    "trace": {"$ref": "../../../common/1.0.0/trace.schema.json"},
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {"status": {"enum": ["ok", "unavailable"]}}
+    }
+  },
+  "examples": [{
+    "id": "8ae1d43c-41b4-4b52-a51e-464f0d8d8878",
+    "type": "reference.service-status-observed",
+    "version": "2.0.0",
+    "source": "content-service",
+    "aggregate_id": "529825d7-d3f2-4edb-80a2-a0d7b1ac5a21",
+    "aggregate_sequence": 1,
+    "occurred_at": "2026-10-14T00:00:00Z",
+    "trace": {"traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"},
+    "data": {"status": "ok"}
+  }]
+}

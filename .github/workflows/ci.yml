@@ -45,6 +45,8 @@ jobs:
             ".ci/security-tools/pyproject.toml" ".ci/security-tools/uv.lock"
             "docs/security-quality-gates.md"
             "contracts/registry.json" "docs/contract-registry.md"
+            "contracts/support.json" "docs/contract-compatibility.md"
+            "compose.contracts.yaml"
           )
           for required_file in "${required_files[@]}"; do
             if [[ ! -s "$required_file" ]]; then
@@ -208,6 +210,92 @@ jobs:
           path: |
             contracts/generated/docs/
             reports/contracts/
+          if-no-files-found: error
+          retention-days: 30
+
+  contract-compatibility:
+    name: Contract compatibility and delivery
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository with comparison history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.23"
+          python-version: "3.14.8"
+          enable-cache: true
+          cache-dependency-glob: |
+            .ci/security-tools/uv.lock
+            services/content-service/uv.lock
+
+      - name: Install locked contract tools and reference service
+        run: |
+          uv sync --project .ci/security-tools --frozen
+          uv sync --project services/content-service --all-groups --frozen
+
+      - name: Resolve exact comparison baseline from the triggering event
+        id: baseline
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True, timeout=30).strip()
+
+          def exact_commit(value):
+              if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{40}", value):
+                  raise SystemExit("Expected an exact baseline commit SHA")
+              return git("rev-parse", "--verify", value + "^{commit}")
+
+          with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as source:
+              event = json.load(source)
+          name = os.environ["GITHUB_EVENT_NAME"]
+          if name == "pull_request":
+              base = exact_commit(event["pull_request"]["base"]["sha"])
+              head = exact_commit(event["pull_request"]["head"]["sha"])
+              baseline = git("merge-base", base, head)
+          elif name == "push":
+              baseline = exact_commit(event["before"])
+          else:
+              # Manual/scheduled runs repeat every fixture and compare the last change.
+              baseline = git("rev-parse", "--verify", "HEAD^1")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write("sha=" + exact_commit(baseline) + "\n")
+          print("Contract baseline:", baseline)
+          PY
+
+      - name: Reject breaking changes to supported contracts
+        env:
+          BASE_SHA: ${{ steps.baseline.outputs.sha }}
+        run: |
+          uv run --project .ci/security-tools --no-sync python \
+            -m scripts.contracts.compatibility --root . --base "$BASE_SHA" \
+            --install-tools --output reports/contracts/compatibility.json
+
+      - name: Exercise every reference binding and real JetStream failure scenarios
+        if: ${{ !cancelled() }}
+        run: |
+          uv run --project .ci/security-tools --no-sync python -m pytest \
+            -c .ci/security-tools/pyproject.toml \
+            scripts/tests/integration/test_contract_registry.py \
+            scripts/tests/integration/test_contract_delivery.py \
+            --junitxml=reports/contracts/delivery-junit.xml
+
+      - name: Publish compatibility and delivery results
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: contract-compatibility-results
+          path: reports/contracts/
           if-no-files-found: error
           retention-days: 30
 
@@ -560,6 +648,7 @@ jobs:
       - scanner-self-tests
       - security-and-coverage
       - contract-registry
+      - contract-compatibility
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

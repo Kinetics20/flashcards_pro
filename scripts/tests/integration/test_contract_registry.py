@@ -11,7 +11,11 @@ import pytest
 from pydantic import ValidationError
 
 from scripts.contracts.build import run_command
-from scripts.contracts.validate import load_registry, validate_contract_document, validate_registry
+from scripts.contracts.validate import (
+    load_registry,
+    validate_contract_document,
+    validate_registry,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 pytestmark = pytest.mark.integration
@@ -52,7 +56,14 @@ def responses(tmp_path_factory):
     directory = tmp_path_factory.mktemp("contract-http")
     service = ROOT / "services/content-service"
     output = run_command(
-        [str(service / ".venv/bin/python"), "-I", "-B", "-c", API_PROBE, str(service / "src")],
+        [
+            str(service / ".venv/bin/python"),
+            "-I",
+            "-B",
+            "-c",
+            API_PROBE,
+            str(service / "src"),
+        ],
         directory,
     )
     return json.loads(output)
@@ -91,7 +102,13 @@ def test_generated_api_boundary_preserves_required_nullable_and_extra_fields(res
     with pytest.raises(ValidationError):
         client.ServiceStatusResponse.model_validate({**payload, "environment": "unknown"})
     # Preserve the existing API: request IDs need not be UUIDs; details are not dict-only.
-    error = {"error": {"code": "validation_error", "message": "Invalid input", "details": [1, "x"]}}
+    error = {
+        "error": {
+            "code": "validation_error",
+            "message": "Invalid input",
+            "details": [1, "x"],
+        }
+    }
     produced = server.ErrorResponse.model_validate(error)
     consumed = client.ErrorResponse.model_validate_json(produced.model_dump_json())
     assert consumed.error.request_id is None
@@ -105,7 +122,9 @@ def test_reference_event_round_trip_and_constraints():
     client = load_models("reference_event_client").ReferenceServiceStatusObserved
     produced = server.model_validate(payload)
     wire = produced.model_dump_json(exclude_none=True)
-    entry = next(item for item in load_registry(ROOT)["contracts"] if item["kind"] == "event")
+    entry = next(
+        item for item in load_registry(ROOT)["contracts"] if item["id"] == "reference-event"
+    )
     assert (
         validate_contract_document(entry, {**document, "examples": [json.loads(wire)]}, ROOT) == []
     )
@@ -132,5 +151,7 @@ def test_canonical_schema_enforces_constraints_beyond_generated_dtos(changes):
     # The code generator cannot preserve every JSON Schema constraint in Pydantic.
     # A future publisher must validate canonical wire JSON, not only instantiate a DTO.
     assert server.model_validate(payload)
-    entry = next(item for item in load_registry(ROOT)["contracts"] if item["kind"] == "event")
+    entry = next(
+        item for item in load_registry(ROOT)["contracts"] if item["id"] == "reference-event"
+    )
     assert validate_contract_document(entry, {**document, "examples": [payload]}, ROOT)

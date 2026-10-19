@@ -2,6 +2,25 @@
   "schema_version": 1,
   "verified_on": "2026-10-07",
   "tools": {
+    "oasdiff": {
+      "version": "1.33.0",
+      "verified_on": "2026-10-14",
+      "release": "https://github.com/oasdiff/oasdiff/releases/tag/v1.33.0",
+      "platforms": {
+        "linux-amd64": {
+          "url": "https://github.com/oasdiff/oasdiff/releases/download/v1.33.0/oasdiff_1.33.0_linux_amd64.tar.gz",
+          "sha256": "43a4e328e2d13ba1552d760aa68d2485c75c5621f309f6ff64ae895188345247"
+        },
+        "linux-arm64": {
+          "url": "https://github.com/oasdiff/oasdiff/releases/download/v1.33.0/oasdiff_1.33.0_linux_arm64.tar.gz",
+          "sha256": "4ae3c362d6074d919aada2dea82d0ee84366591600384455d0bdc658ddf8f7ae"
+        },
+        "darwin-arm64": {
+          "url": "https://github.com/oasdiff/oasdiff/releases/download/v1.33.0/oasdiff_1.33.0_darwin_all.tar.gz",
+          "sha256": "2a479337c15afdcbf0b1e89c0b4d0cf0176472dbc11483358fed1f831d1e46c5"
+        }
+      }
+    },
     "gitleaks": {
       "version": "8.30.1",
       "release": "https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1",
