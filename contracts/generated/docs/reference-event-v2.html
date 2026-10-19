@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>reference-event-v2</title><style>body{max-width:1100px;margin:3rem auto;padding:0 1rem;font:16px system-ui;line-height:1.6;color:#172b4d;background:#f6f8fb}h1,h2{line-height:1.2}table{border-collapse:collapse;width:100%;background:white}td,th{padding:.6rem;text-align:left;border:1px solid #ccd5e1}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#11243a;color:#eef5ff;padding:1rem;border-radius:.5rem}a{color:#075fb5}</style></head><body><h1>reference-event-v2</h1><p><a href="index.html">Contract catalog</a></p><table><tr><th>version</th><td>&quot;2.0.0&quot;</td></tr><tr><th>kind</th><td>&quot;event&quot;</td></tr><tr><th>owner</th><td>&quot;backend-team&quot;</td></tr><tr><th>producer</th><td>&quot;content-service&quot;</td></tr><tr><th>consumers</th><td>[]</td></tr><tr><th>scope</th><td>&quot;reference&quot;</td></tr><tr><th>lifecycle</th><td>&quot;active&quot;</td></tr><tr><th>deprecation</th><td>null</td></tr><tr><th>schema_path</th><td>&quot;contracts/events/reference/2.0.0/schema.json&quot;</td></tr></table><p>Python outputs are transport DTOs, not a generated API implementation or client.</p><p><strong>Reference-only example. No production publisher or domain flow exists.</strong></p><h2>Complete schema and examples</h2><pre>{
+  &quot;$schema&quot;: &quot;https://json-schema.org/draft/2020-12/schema&quot;,
+  &quot;additionalProperties&quot;: false,
+  &quot;description&quot;: &quot;REFERENCE ONLY. Executed by contract fixtures, not a production domain publisher or outbox. V1 remains supported separately.&quot;,
+  &quot;examples&quot;: [
+    {
+      &quot;aggregate_id&quot;: &quot;529825d7-d3f2-4edb-80a2-a0d7b1ac5a21&quot;,
+      &quot;aggregate_sequence&quot;: 1,
+      &quot;data&quot;: {
+        &quot;status&quot;: &quot;ok&quot;
+      },
+      &quot;id&quot;: &quot;8ae1d43c-41b4-4b52-a51e-464f0d8d8878&quot;,
+      &quot;occurred_at&quot;: &quot;2026-10-14T00:00:00Z&quot;,
+      &quot;source&quot;: &quot;content-service&quot;,
+      &quot;trace&quot;: {
+        &quot;traceparent&quot;: &quot;00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01&quot;
+      },
+      &quot;type&quot;: &quot;reference.service-status-observed&quot;,
+      &quot;version&quot;: &quot;2.0.0&quot;
+    }
+  ],
+  &quot;properties&quot;: {
+    &quot;aggregate_id&quot;: {
+      &quot;$ref&quot;: &quot;../../../common/1.0.0/uuid.schema.json&quot;
+    },
+    &quot;aggregate_sequence&quot;: {
+      &quot;maximum&quot;: 9223372036854775807,
+      &quot;minimum&quot;: 1,
+      &quot;type&quot;: &quot;integer&quot;
+    },
+    &quot;data&quot;: {
+      &quot;additionalProperties&quot;: false,
+      &quot;properties&quot;: {
+        &quot;status&quot;: {
+          &quot;enum&quot;: [
+            &quot;ok&quot;,
+            &quot;unavailable&quot;
+          ]
+        }
+      },
+      &quot;required&quot;: [
+        &quot;status&quot;
+      ],
+      &quot;type&quot;: &quot;object&quot;
+    },
+    &quot;id&quot;: {
+      &quot;$ref&quot;: &quot;../../../common/1.0.0/uuid.schema.json&quot;
+    },
+    &quot;occurred_at&quot;: {
+      &quot;$ref&quot;: &quot;../../../common/1.0.0/timestamp.schema.json&quot;
+    },
+    &quot;source&quot;: {
+      &quot;const&quot;: &quot;content-service&quot;
+    },
+    &quot;trace&quot;: {
+      &quot;$ref&quot;: &quot;../../../common/1.0.0/trace.schema.json&quot;
+    },
+    &quot;type&quot;: {
+      &quot;const&quot;: &quot;reference.service-status-observed&quot;
+    },
+    &quot;version&quot;: {
+      &quot;const&quot;: &quot;2.0.0&quot;
+    }
+  },
+  &quot;required&quot;: [
+    &quot;id&quot;,
+    &quot;type&quot;,
+    &quot;version&quot;,
+    &quot;source&quot;,
+    &quot;aggregate_id&quot;,
+    &quot;aggregate_sequence&quot;,
+    &quot;occurred_at&quot;,
+    &quot;trace&quot;,
+    &quot;data&quot;
+  ],
+  &quot;title&quot;: &quot;ReferenceStatusV2&quot;,
+  &quot;type&quot;: &quot;object&quot;,
+  &quot;x-reference-only&quot;: true
+}
+</pre></body></html>

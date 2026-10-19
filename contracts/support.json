@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "bindings": [
+    {"contract_id": "content-api", "family": "content-api", "version": "0.1.0", "transport": "http", "locator": "/api/v1/status", "fixture": "status-http"},
+    {"contract_id": "reference-event", "family": "reference-event", "version": "1.0.0", "transport": "nats", "locator": "reference.status.v1", "fixture": "status-event-v1"},
+    {"contract_id": "reference-event-v2", "family": "reference-event", "version": "2.0.0", "transport": "nats", "locator": "reference.status.v2", "fixture": "status-event-v2"}
+  ]
+}

@@ -7,6 +7,7 @@ dependencies = [
     "coverage==7.16.0",
     "datamodel-code-generator==0.83.0",
     "jsonschema==4.26.0",
+    "nats-py==2.16.0",
     "openapi-spec-validator==0.9.0",
     "pip-audit==2.10.1",
     "pip-licenses==5.5.5",
