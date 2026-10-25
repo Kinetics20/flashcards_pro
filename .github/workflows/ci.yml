@@ -47,6 +47,7 @@ jobs:
             "contracts/registry.json" "docs/contract-registry.md"
             "contracts/support.json" "docs/contract-compatibility.md"
             "compose.contracts.yaml"
+            "docs/path-aware-ci.md" "scripts/ci/plan.py" "scripts/ci/run_integration.py"
           )
           for required_file in "${required_files[@]}"; do
             if [[ ! -s "$required_file" ]]; then
@@ -153,9 +154,9 @@ jobs:
         if: ${{ !cancelled() && matrix.target == 'repo-security-tools' }}
         run: |
           uv run --project .ci/security-tools --frozen ruff check \
-            --config .ci/security-tools/pyproject.toml scripts/security scripts/contracts scripts/tests
+            --config .ci/security-tools/pyproject.toml scripts/security scripts/contracts scripts/ci scripts/tests
           uv run --project .ci/security-tools --frozen ruff format --check \
-            --config .ci/security-tools/pyproject.toml scripts/security scripts/contracts scripts/tests
+            --config .ci/security-tools/pyproject.toml scripts/security scripts/contracts scripts/ci scripts/tests
 
       - name: Upload test evidence
         if: always()
@@ -165,6 +166,139 @@ jobs:
           path: reports/
           if-no-files-found: error
           retention-days: ${{ github.event_name == 'schedule' && 90 || 30 }}
+
+  execution-plan:
+    name: Integration impact plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      targets: ${{ steps.plan.outputs.targets }}
+      has_targets: ${{ steps.plan.outputs.has_targets }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.23"
+          python-version: "3.14.8"
+          enable-cache: true
+          cache-dependency-glob: .ci/security-tools/uv.lock
+      - name: Compute impact from Git and current validated inventories
+        id: plan
+        run: |
+          uv run --project .ci/security-tools --frozen python -m scripts.ci.plan \
+            --root . --github-output "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ci-execution-plan
+          path: reports/ci-plan.json
+          if-no-files-found: error
+          retention-days: 7
+
+  selected-integration:
+    name: Runtime integration — ${{ matrix.target }}
+    needs: [execution-plan]
+    # Guard at job level before evaluating an empty matrix. Full baseline jobs are not filtered.
+    if: needs.execution-plan.outputs.has_targets == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.execution-plan.outputs.targets) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.23"
+          python-version: "3.14.8"
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ci-execution-plan
+          path: reports
+      - name: Recompute plan, validate selected project and install its locked environment
+        env:
+          TARGET_ID: ${{ matrix.target }}
+        run: |
+          uv run --project .ci/security-tools --frozen python - <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+          from scripts.ci.plan import expected_plan
+          root = Path.cwd()
+          plan = expected_plan(root, root / "reports/ci-plan.json")
+          target_id = os.environ["TARGET_ID"]
+          if target_id not in plan["selected"]:
+              raise SystemExit("Target is not required by recomputed plan")
+          target = next(target for target in plan["targets"] if target["id"] == target_id)
+          subprocess.run(["uv", "sync", "--project", target["path"], "--all-groups", "--frozen"], check=True)
+          PY
+      - name: Run actual lifecycle, PostgreSQL migrations and rollback checks where supported
+        env:
+          TARGET_ID: ${{ matrix.target }}
+        run: |
+          uv run --project .ci/security-tools --frozen python -m scripts.ci.run_integration run \
+            --root . --target "$TARGET_ID"
+      - name: Upload integration evidence, including failed tests
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ci-runtime-${{ matrix.target }}
+          path: reports/integration/
+          if-no-files-found: error
+          retention-days: 7
+
+  integration-evidence:
+    name: Verify selected integration evidence
+    if: always()
+    needs: [execution-plan, selected-integration]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.23"
+          python-version: "3.14.8"
+          enable-cache: true
+          cache-dependency-glob: .ci/security-tools/uv.lock
+      - name: Reject failed planner or required integration job
+        env:
+          PLAN_RESULT: ${{ needs.execution-plan.result }}
+          INTEGRATION_RESULT: ${{ needs.selected-integration.result }}
+          HAS_TARGETS: ${{ needs.execution-plan.outputs.has_targets }}
+        run: |
+          test "$PLAN_RESULT" = success
+          if [[ "$HAS_TARGETS" == true ]]; then
+            test "$INTEGRATION_RESULT" = success
+          elif [[ "$HAS_TARGETS" == false ]]; then
+            test "$INTEGRATION_RESULT" = skipped
+          else
+            exit 1
+          fi
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ci-execution-plan
+          path: reports
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        if: needs.execution-plan.outputs.has_targets == 'true'
+        with:
+          pattern: ci-runtime-*
+          path: reports/integration
+          merge-multiple: true
+      - name: Independently recompute expected selection and verify exact evidence
+        run: |
+          uv run --project .ci/security-tools --frozen python -m scripts.ci.run_integration verify --root .
 
   contract-registry:
     name: Contract registry
@@ -422,20 +556,36 @@ jobs:
               output.write(f"path={target['path']}\n")
           PY
 
-      - name: Build image once and record immutable local image ID
+      - name: Set up isolated Buildx builder
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+
+      - name: Build image once, restore layers and load the exact tested image
         id: image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: ${{ steps.context.outputs.path }}
+          load: true
+          push: false
+          tags: flashcards-${{ matrix.target }}:${{ github.sha }}
+          cache-from: type=gha,scope=fcb-${{ matrix.target }}-${{ runner.arch }}
+          # PRs (including forks) may restore eligible base-branch cache, but never save it.
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,mode=min,scope=fcb-{0}-{1}', matrix.target, runner.arch) || '' }}
+          provenance: false
         env:
-          BUILD_CONTEXT: ${{ steps.context.outputs.path }}
+          DOCKER_BUILD_RECORD_UPLOAD: false
+
+      - name: Record immutable local image ID
+        id: image-id
+        env:
           IMAGE_TAG: flashcards-${{ matrix.target }}:${{ github.sha }}
         run: |
           set -Eeuo pipefail
-          docker build --tag "$IMAGE_TAG" "$BUILD_CONTEXT"
           image_id="$(docker image inspect --format '{{.Id}}' "$IMAGE_TAG")"
           echo "id=$image_id" >> "$GITHUB_OUTPUT"
 
       - name: Run container smoke test against the same image
         env:
-          IMAGE_ID: ${{ steps.image.outputs.id }}
+          IMAGE_ID: ${{ steps.image-id.outputs.id }}
         run: |
           set -Eeuo pipefail
           container_id="$(docker run --detach --publish 127.0.0.1::8000 \
@@ -460,10 +610,10 @@ jobs:
           fi
 
       - name: Scan built image and export SBOM even if smoke test failed
-        if: ${{ !cancelled() && steps.image.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.image-id.outcome == 'success' }}
         env:
           TARGET_ID: ${{ matrix.target }}
-          IMAGE_ID: ${{ steps.image.outputs.id }}
+          IMAGE_ID: ${{ steps.image-id.outputs.id }}
         run: |
           uv run --project .ci/security-tools --frozen python \
             -m scripts.security.run_scans --phase image --root . \
@@ -649,6 +799,8 @@ jobs:
       - security-and-coverage
       - contract-registry
       - contract-compatibility
+      - execution-plan
+      - integration-evidence
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

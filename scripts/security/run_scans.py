@@ -772,6 +772,8 @@ class Runner:
                     "scripts/tests/unit",
                     "--cov=scripts/security",
                     "--cov=scripts/contracts",
+                    "--cov=scripts/ci",
+                    f"--cov-config={project / 'pyproject.toml'}",
                     *options,
                 ]
                 project = self.root

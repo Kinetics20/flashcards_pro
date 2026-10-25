@@ -33,6 +33,9 @@ def test_discovery_and_outputs(tmp_path, monkeypatch):
         "repository",
     ]
     assert len(result["inputs"]) == 4
+    tooling = next(t for t in result["targets"] if t["kind"] == "tooling")
+    assert tooling["coverage_source"] == "scripts"
+    assert tooling["coverage_sources"] == ["scripts/security", "scripts/contracts", "scripts/ci"]
     output = tmp_path / "manifest.json"
     github = tmp_path / "github.txt"
     assert (
