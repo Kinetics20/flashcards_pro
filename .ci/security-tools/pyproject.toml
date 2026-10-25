@@ -28,7 +28,7 @@ markers = ["integration: executes real pinned scanners and may use the network"]
 
 [tool.coverage.run]
 branch = true
-source = ["scripts/security"]
+source = ["scripts/security", "scripts/contracts", "scripts/ci"]
 
 [tool.coverage.report]
 fail_under = 90

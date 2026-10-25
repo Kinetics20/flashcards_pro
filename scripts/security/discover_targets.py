@@ -42,7 +42,7 @@ def _project(root: Path, relative: str, target_id: str, kind: str) -> dict[str, 
         "checks": checks,
         "coverage": True,
         "coverage_source": "scripts" if kind == "tooling" else "app",
-        "coverage_sources": ["scripts/security", "scripts/contracts"]
+        "coverage_sources": ["scripts/security", "scripts/contracts", "scripts/ci"]
         if kind == "tooling"
         else ["app"],
         "lockfile_sha256": sha256_file(folder / "uv.lock"),
