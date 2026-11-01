@@ -1,21 +1,355 @@
 name: flashcards
 
+x-labels: &labels
+  flashcards.local.owner: ${FCB_LOCAL_OWNER:-uninitialized}
+x-runtime: &runtime
+  init: true
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  labels: *labels
+  logging:
+    driver: json-file
+    options: {max-size: "5m", max-file: "2"}
+x-content-image: &content-image
+  image: flashcards-local-content:${FCB_LOCAL_IMAGE_TAG:-local}
+  build:
+    context: ./services/content-service
+x-health: &health
+  interval: 3s
+  timeout: 3s
+  retries: 40
+  start_period: 10s
+
 services:
+  volume-init:
+    image: alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+    profiles: [core]
+    restart: "no"
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER]
+    security_opt: [no-new-privileges:true]
+    labels: *labels
+    network_mode: none
+    mem_limit: 32m
+    cpus: 0.25
+    # nocopy leaves new mounts empty. Existing data stays untouched on restarts.
+    command: [sh, -ec, "chown 10001:10001 /nats /redis /s3; chmod 0700 /nats /redis /s3"]
+    volumes:
+      - {type: volume, source: nats-data, target: /nats, volume: {nocopy: true}}
+      - {type: volume, source: redis-data, target: /redis, volume: {nocopy: true}}
+      - {type: volume, source: s3-data, target: /s3, volume: {nocopy: true}}
+
+  postgres-content:
+    <<: *runtime
+    image: postgres:17.11-alpine3.24@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    profiles: [core]
+    user: "70:70"
+    mem_limit: 256m
+    cpus: 1
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: content
+      POSTGRES_PASSWORD: ${FCB_CONTENT_DB_ADMIN_PASSWORD:-}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      FCB_DB_APP_USER: content
+      FCB_DB_APP_PASSWORD: ${FCB_CONTENT_DB_PASSWORD:-}
+    volumes:
+      - content-db:/var/lib/postgresql/data
+      - type: bind
+        source: ./infrastructure/local/postgres/10-application-role.sql
+        target: /docker-entrypoint-initdb.d/10-application-role.sql
+        read_only: true
+        bind: {create_host_path: false}
+    tmpfs: ["/tmp", "/var/run/postgresql:uid=70,gid=70,mode=0770"]
+    networks: [content-db]
+    healthcheck:
+      <<: *health
+      test: [CMD-SHELL, "pg_isready -U postgres -d content && PGPASSWORD=$$FCB_DB_APP_PASSWORD psql -h 127.0.0.1 -U content -d content -Atqc 'SELECT 1' | grep -qx 1"]
+
+  postgres-identity:
+    <<: *runtime
+    image: postgres:17.11-alpine3.24@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    profiles: [core]
+    user: "70:70"
+    mem_limit: 256m
+    cpus: 1
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: keycloak
+      POSTGRES_PASSWORD: ${FCB_IDENTITY_DB_ADMIN_PASSWORD:-}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      FCB_DB_APP_USER: keycloak
+      FCB_DB_APP_PASSWORD: ${FCB_IDENTITY_DB_PASSWORD:-}
+    volumes:
+      - identity-db:/var/lib/postgresql/data
+      - type: bind
+        source: ./infrastructure/local/postgres/10-application-role.sql
+        target: /docker-entrypoint-initdb.d/10-application-role.sql
+        read_only: true
+        bind: {create_host_path: false}
+    tmpfs: ["/tmp", "/var/run/postgresql:uid=70,gid=70,mode=0770"]
+    networks: [identity-db]
+    healthcheck:
+      <<: *health
+      test: [CMD-SHELL, "pg_isready -U postgres -d keycloak && PGPASSWORD=$$FCB_DB_APP_PASSWORD psql -h 127.0.0.1 -U keycloak -d keycloak -Atqc 'SELECT 1' | grep -qx 1"]
+
+  content-migrate:
+    <<: [*runtime, *content-image]
+    profiles: [core]
+    restart: "no"
+    mem_limit: 256m
+    cpus: 1
+    command: [alembic, upgrade, head]
+    environment:
+      APP_ENVIRONMENT: local
+      APP_DATABASE_ENABLED: "true"
+      APP_DATABASE_URL: postgresql+asyncpg://content:${FCB_CONTENT_DB_PASSWORD:-}@postgres-content:5432/content
+    tmpfs: [/tmp]
+    networks: [content-db]
+    depends_on:
+      postgres-content: {condition: service_healthy}
+
   content-service:
-    build:
-      context: ./services/content-service
-    init: true
-    restart: unless-stopped
+    <<: [*runtime, *content-image]
+    profiles: [core]
+    mem_limit: 384m
+    cpus: 1
     environment:
       APP_NAME: Flashcards Content Service
       APP_ENVIRONMENT: local
       APP_DOCS_ENABLED: "true"
+      APP_DATABASE_ENABLED: "true"
+      APP_DATABASE_URL: postgresql+asyncpg://content:${FCB_CONTENT_DB_PASSWORD:-}@postgres-content:5432/content
+      APP_TELEMETRY_ENABLED: ${FCB_TELEMETRY_ENABLED:-false}
+      APP_METRICS_ENABLED: ${FCB_TELEMETRY_ENABLED:-false}
+      APP_TELEMETRY_OTLP_ENDPOINT: http://otel-collector:4317
+      APP_TELEMETRY_EXPORT_TIMEOUT_SECONDS: "3"
+    ports: ["127.0.0.1:${FCB_CONTENT_PORT:-18002}:8000"]
+    tmpfs: [/tmp]
+    networks: [application, content-db, telemetry]
+    depends_on:
+      content-migrate: {condition: service_completed_successfully}
+    healthcheck:
+      <<: *health
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)"]
+
+  keycloak:
+    <<: *runtime
+    image: quay.io/keycloak/keycloak:26.8.0@sha256:27b3230fbabb8c9ff3c66c864cf09dcd8a41aca82e5100679d109ef0eeb05741
+    profiles: [core]
+    mem_limit: 1024m
+    cpus: 2
+    # start-dev rebuilds Quarkus metadata in /opt/keycloak. This is explicitly local-only.
+    read_only: false
+    command: [start-dev, --import-realm]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: local-admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${FCB_KEYCLOAK_ADMIN_PASSWORD:-}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres-identity:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${FCB_IDENTITY_DB_PASSWORD:-}
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_HTTP_MANAGEMENT_RELATIVE_PATH: /
+      KC_HOSTNAME: http://127.0.0.1:${FCB_GATEWAY_PORT:-18080}/auth
+      KC_PROXY_HEADERS: xforwarded
+      FCB_OIDC_CLIENT_SECRET: ${FCB_OIDC_CLIENT_SECRET:-}
+    volumes:
+      - type: bind
+        source: ./infrastructure/local/keycloak/flashcards-realm.json
+        target: /opt/keycloak/data/import/flashcards-realm.json
+        read_only: true
+        bind: {create_host_path: false}
+    tmpfs: [/tmp]
+    networks: [application, identity-db]
+    depends_on:
+      postgres-identity: {condition: service_healthy}
+    healthcheck:
+      <<: *health
+      start_period: 45s
+      test: [CMD, bash, -ec, "{ printf 'GET /health/ready HTTP/1.0\r\nHost: localhost\r\n\r\n' >&0; grep -q '200 OK'; } 0<>/dev/tcp/127.0.0.1/9000"]
+
+  nats:
+    <<: *runtime
+    image: nats:2.15.1-alpine3.22@sha256:2ae57dfba3063d5e25fecb75256118c0882a1a2d2cf7d0fba17a7c701df956f6
+    profiles: [core]
+    user: "10001:10001"
+    mem_limit: 192m
+    cpus: 1
+    entrypoint: [sh, -ec]
+    command: [": $${FCB_NATS_PASSWORD:?Bootstrap local credentials first}; exec nats-server --config /etc/nats/local.conf"]
+    environment:
+      FCB_NATS_PASSWORD: ${FCB_NATS_PASSWORD:-}
+    volumes:
+      - {type: volume, source: nats-data, target: /data, volume: {nocopy: true}}
+      - type: bind
+        source: ./infrastructure/local/nats/server.conf
+        target: /etc/nats/local.conf
+        read_only: true
+        bind: {create_host_path: false}
+    ports: ["127.0.0.1:${FCB_NATS_PORT:-14222}:4222"]
+    networks: [messaging]
+    depends_on:
+      volume-init: {condition: service_completed_successfully}
+    healthcheck:
+      <<: *health
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8222/healthz?js-enabled-only=true"]
+
+  redis:
+    <<: *runtime
+    image: redis:8.10.2-alpine3.23@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
+    profiles: [core]
+    user: "10001:10001"
+    mem_limit: 192m
+    cpus: 0.5
+    entrypoint: [sh, /etc/redis/local-start.sh]
+    environment:
+      FCB_REDIS_PASSWORD: ${FCB_REDIS_PASSWORD:-}
+    volumes:
+      - {type: volume, source: redis-data, target: /data, volume: {nocopy: true}}
+      - type: bind
+        source: ./infrastructure/local/redis/start.sh
+        target: /etc/redis/local-start.sh
+        read_only: true
+        bind: {create_host_path: false}
+    tmpfs: [/tmp]
+    ports: ["127.0.0.1:${FCB_REDIS_PORT:-16379}:6379"]
+    networks: [cache]
+    depends_on:
+      volume-init: {condition: service_completed_successfully}
+    healthcheck:
+      <<: *health
+      test: [CMD-SHELL, "REDISCLI_AUTH=$$FCB_REDIS_PASSWORD redis-cli --no-auth-warning ping | grep -qx PONG"]
+
+  s3:
+    <<: *runtime
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    profiles: [core]
+    user: "10001:10001"
+    mem_limit: 512m
+    cpus: 1
+    entrypoint: [sh, -ec]
+    command:
+      - ": $${AWS_ACCESS_KEY_ID:?Bootstrap local credentials first}; : $${AWS_SECRET_ACCESS_KEY:?Bootstrap local credentials first}; exec weed mini -dir=/data -ip=127.0.0.1 -ip.bind=0.0.0.0 -s3.port=8333 -master.volumeSizeLimitMB=64 -volume.max=4 -webdav=false -admin.ui=false -master.telemetry=false -s3.allowDeleteBucketNotEmpty=false"
+    environment:
+      AWS_ACCESS_KEY_ID: ${FCB_S3_ACCESS_KEY:-}
+      AWS_SECRET_ACCESS_KEY: ${FCB_S3_SECRET_KEY:-}
+      S3_BUCKET: flashcards-local
+    volumes:
+      - {type: volume, source: s3-data, target: /data, volume: {nocopy: true}}
+    tmpfs: [/tmp]
+    ports: ["127.0.0.1:${FCB_S3_PORT:-18333}:8333"]
+    networks: [storage]
+    depends_on:
+      volume-init: {condition: service_completed_successfully}
+    healthcheck:
+      <<: *health
+      test: [CMD-SHELL, "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status && wget -S -O /dev/null http://127.0.0.1:8333/ 2>&1 | grep -q '403 Forbidden'"]
+
+  gateway:
+    <<: *runtime
+    image: nginx:1.30.5-alpine3.24@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94
+    profiles: [core]
+    user: "101:101"
+    mem_limit: 64m
+    cpus: 0.5
+    entrypoint: [nginx]
+    command: [-g, "daemon off;"]
+    volumes:
+      - type: bind
+        source: ./infrastructure/local/gateway/nginx.conf
+        target: /etc/nginx/nginx.conf
+        read_only: true
+        bind: {create_host_path: false}
+    tmpfs: [/tmp]
+    ports: ["127.0.0.1:${FCB_GATEWAY_PORT:-18080}:8080"]
+    networks: [application]
+    depends_on:
+      content-service: {condition: service_healthy}
+      keycloak: {condition: service_healthy}
+    healthcheck:
+      <<: *health
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8080/health/ready"]
+
+  otel-collector:
+    <<: *runtime
+    image: flashcards-local-collector:${FCB_LOCAL_IMAGE_TAG:-local}
+    build:
+      context: ./infrastructure/local/collector
+    profiles: [observability]
+    user: "10001:10001"
+    mem_limit: 192m
+    cpus: 0.5
+    command: [--config=/etc/otelcol/config.yaml]
+    tmpfs: [/tmp]
+    volumes:
+      - type: bind
+        source: ./infrastructure/local/collector/config.yaml
+        target: /etc/otelcol/config.yaml
+        read_only: true
+        bind: {create_host_path: false}
     ports:
-      - "127.0.0.1:8002:8000"
-    read_only: true
-    tmpfs:
-      - /tmp
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
+      - "127.0.0.1:${FCB_OTLP_GRPC_PORT:-14317}:4317"
+      - "127.0.0.1:${FCB_OTLP_HTTP_PORT:-14318}:4318"
+    networks: [telemetry]
+    healthcheck:
+      <<: *health
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:13133/"]
+
+  adminer:
+    <<: *runtime
+    image: adminer:6.1.2-standalone@sha256:c4e439badea7c611be25d4b1e83f82333b5f10cc2fe8c899725c665541e33ff1
+    profiles: [tools]
+    mem_limit: 128m
+    cpus: 0.5
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres-content
+    tmpfs: [/tmp]
+    ports: ["127.0.0.1:${FCB_ADMINER_PORT:-18081}:8080"]
+    networks: [content-db, tools]
+    depends_on:
+      postgres-content: {condition: service_healthy}
+    healthcheck:
+      <<: *health
+      test: [CMD, php, -r, "exit(file_get_contents('http://127.0.0.1:8080') === false ? 1 : 0);"]
+
+  test-probe:
+    <<: [*runtime, *content-image]
+    profiles: [test]
+    restart: "no"
+    mem_limit: 128m
+    cpus: 0.5
+    command: [python, -B, /probe/probe.py]
+    tmpfs: [/tmp]
+    volumes:
+      - type: bind
+        source: ./infrastructure/local/test/probe.py
+        target: /probe/probe.py
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [application]
+    depends_on:
+      gateway: {condition: service_healthy}
+
+networks:
+  application: {labels: *labels}
+  content-db: {internal: true, labels: *labels}
+  identity-db: {internal: true, labels: *labels}
+  messaging: {labels: *labels}
+  cache: {labels: *labels}
+  storage: {labels: *labels}
+  telemetry: {labels: *labels}
+  tools: {labels: *labels}
+
+volumes:
+  content-db: {labels: *labels}
+  identity-db: {labels: *labels}
+  nats-data: {labels: *labels}
+  redis-data: {labels: *labels}
+  s3-data: {labels: *labels}

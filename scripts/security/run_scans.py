@@ -34,11 +34,12 @@ def run(
     *,
     allowed: tuple[int, ...] = (0,),
     timeout: int = 900,
+    environment: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Capture process output; never put arbitrary output or arguments in errors."""
     env = {
         key: value
-        for key, value in os.environ.items()
+        for key, value in (os.environ if environment is None else environment).items()
         if not key.startswith(("TRIVY_", "GITLEAKS_"))
     }
     env["NO_COLOR"] = "1"
@@ -568,41 +569,14 @@ class Runner:
             return findings, [raw]
 
         def compose() -> tuple[list[dict[str, Any]], list[Path]]:
-            try:
-                from .scan_compose import scan_compose
-            except ImportError:
-                from scan_compose import scan_compose
+            from .compose_inventory import documents
+            from .scan_compose import scan_compose
+
             raw = directory / "compose.raw.json"
             records = []
             findings = []
-            names = run(["git", "ls-files", "-z"], self.root).stdout.split("\0")
-            sources = [
-                name
-                for name in names
-                if Path(name).name
-                in {
-                    "compose.yaml",
-                    "compose.yml",
-                    "docker-compose.yaml",
-                    "docker-compose.yml",
-                }
-            ]
-            if not sources:
-                raise ScanError("no tracked Compose configuration found")
-            for source in sources:
-                result = run(
-                    [
-                        "docker",
-                        "compose",
-                        "-f",
-                        str(self.root / source),
-                        "config",
-                        "--format",
-                        "json",
-                    ],
-                    self.root,
-                )
-                document = json.loads(result.stdout)
+            for target, document in documents(self.root):
+                source = target["path"]
                 detected = scan_compose(document, source)
                 findings.extend(detected)
                 records.append(
@@ -773,6 +747,7 @@ class Runner:
                     "--cov=scripts/security",
                     "--cov=scripts/contracts",
                     "--cov=scripts/ci",
+                    "--cov=scripts/local",
                     f"--cov-config={project / 'pyproject.toml'}",
                     *options,
                 ]

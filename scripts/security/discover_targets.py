@@ -42,7 +42,7 @@ def _project(root: Path, relative: str, target_id: str, kind: str) -> dict[str, 
         "checks": checks,
         "coverage": True,
         "coverage_source": "scripts" if kind == "tooling" else "app",
-        "coverage_sources": ["scripts/security", "scripts/contracts", "scripts/ci"]
+        "coverage_sources": ["scripts/security", "scripts/contracts", "scripts/ci", "scripts/local"]
         if kind == "tooling"
         else ["app"],
         "lockfile_sha256": sha256_file(folder / "uv.lock"),
@@ -89,6 +89,7 @@ def discover(root: Path) -> dict[str, Any]:
         "security/exceptions.json",
         "security/tools.lock.json",
         "security/gitleaks.toml",
+        "security/compose-targets.json",
     ):
         inputs[relative] = sha256_file(contained_path(root, relative))
     return {

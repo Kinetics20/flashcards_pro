@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.security import discover_targets, run_scans
+from scripts.security import compose_inventory, discover_targets, run_scans
 
 COMMIT = "a" * 40
 IMAGE_ID = "sha256:" + "b" * 64
@@ -123,6 +123,13 @@ def context(tmp_path, monkeypatch):
     }
     (root / "compose.yaml").write_text("services:\n  api:\n    image: fixture\n")
     (root / "Dockerfile").write_text("FROM scratch\n")
+
+    def compose_documents(root):
+        if "compose.yaml" not in state["tracked"]:
+            raise run_scans.ScanError("Compose inventory is incomplete")
+        return [({"path": "compose.yaml"}, state["compose"])]
+
+    monkeypatch.setattr(compose_inventory, "documents", compose_documents)
 
     def fake_run(command, cwd, **kwargs):
         calls.append((command, Path(cwd), kwargs))

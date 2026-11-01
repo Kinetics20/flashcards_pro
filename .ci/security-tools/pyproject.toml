@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Isolated, locked repository security and reporting tools"
 requires-python = ">=3.14,<3.15"
 dependencies = [
+    "boto3==1.43.113",
     "coverage==7.16.0",
     "datamodel-code-generator==0.83.0",
     "jsonschema==4.26.0",
@@ -15,6 +16,7 @@ dependencies = [
     "PyYAML==6.0.3",
     "pytest==9.1.1",
     "pytest-cov==7.1.0",
+    "redis==8.1.0",
     "rfc3339-validator==0.1.4",
     "ruff==0.16.6",
 ]
@@ -24,11 +26,11 @@ package = false
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers"
-markers = ["integration: executes real pinned scanners and may use the network"]
+markers = ["integration: executes real tools or service contracts; scanner tests may use the network"]
 
 [tool.coverage.run]
 branch = true
-source = ["scripts/security", "scripts/contracts", "scripts/ci"]
+source = ["scripts/security", "scripts/contracts", "scripts/ci", "scripts/local"]
 
 [tool.coverage.report]
 fail_under = 90

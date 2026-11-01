@@ -42,6 +42,7 @@ jobs:
             "scripts/create-service.sh" "scripts/check-service-boundaries.py"
             "security/policy.json" "security/exceptions.json"
             "security/tools.lock.json" "security/gitleaks.toml"
+            "security/compose-targets.json"
             ".ci/security-tools/pyproject.toml" ".ci/security-tools/uv.lock"
             "docs/security-quality-gates.md"
             "contracts/registry.json" "docs/contract-registry.md"
@@ -64,19 +65,24 @@ jobs:
       - name: Check service boundaries
         run: python3 scripts/check-service-boundaries.py
 
-      - name: Validate Docker Compose
-        run: docker compose config --quiet
-
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.23"
+          version: "0.13.4"
           python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: .ci/security-tools/uv.lock
 
       - name: Validate security policy and exceptions
         run: uv run --project .ci/security-tools --frozen python -m scripts.security.gate validate-policy --root .
+
+      - name: Validate every standalone Compose stack and profile without developer environment
+        run: |
+          uv run --project .ci/security-tools --frozen python - <<'PY'
+          from pathlib import Path
+          from scripts.security.compose_inventory import documents
+          print(f"Validated {len(documents(Path.cwd()))} standalone Compose stacks, all profiles.")
+          PY
 
   discover-services:
     name: Discover services
@@ -95,7 +101,7 @@ jobs:
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.23"
+          version: "0.13.4"
           python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: .ci/security-tools/uv.lock
@@ -134,7 +140,7 @@ jobs:
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.23"
+          version: "0.13.4"
           python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: "**/uv.lock"
@@ -154,9 +160,9 @@ jobs:
         if: ${{ !cancelled() && matrix.target == 'repo-security-tools' }}
         run: |
           uv run --project .ci/security-tools --frozen ruff check \
-            --config .ci/security-tools/pyproject.toml scripts/security scripts/contracts scripts/ci scripts/tests
+            --config .ci/security-tools/pyproject.toml scripts/security scripts/contracts scripts/ci scripts/local scripts/tests
           uv run --project .ci/security-tools --frozen ruff format --check \
-            --config .ci/security-tools/pyproject.toml scripts/security scripts/contracts scripts/ci scripts/tests
+            --config .ci/security-tools/pyproject.toml scripts/security scripts/contracts scripts/ci scripts/local scripts/tests
 
       - name: Upload test evidence
         if: always()
@@ -181,7 +187,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.23"
+          version: "0.13.4"
           python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: .ci/security-tools/uv.lock
@@ -215,7 +221,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.23"
+          version: "0.13.4"
           python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: "**/uv.lock"
@@ -268,7 +274,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.23"
+          version: "0.13.4"
           python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: .ci/security-tools/uv.lock
@@ -313,7 +319,7 @@ jobs:
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.23"
+          version: "0.13.4"
           python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: |
@@ -361,7 +367,7 @@ jobs:
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.23"
+          version: "0.13.4"
           python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: |
@@ -451,7 +457,7 @@ jobs:
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.23"
+          version: "0.13.4"
           python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: "**/uv.lock"
@@ -491,7 +497,7 @@ jobs:
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.23"
+          version: "0.13.4"
           python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: .ci/security-tools/uv.lock
@@ -532,7 +538,7 @@ jobs:
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.23"
+          version: "0.13.4"
           python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: .ci/security-tools/uv.lock
@@ -641,7 +647,7 @@ jobs:
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.23"
+          version: "0.13.4"
           python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: templates/fastapi-microservice/uv.lock
@@ -694,6 +700,58 @@ jobs:
           IMAGE_TAG: flashcards-ci-sample:${{ github.sha }}
         run: make image-build IMAGE="$IMAGE_TAG"
 
+  local-stack-integration:
+    name: Local Compose integration and infrastructure security
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up locked integration SDKs and scanner tools
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.13.4"
+          python-version: "3.14.8"
+          enable-cache: true
+          cache-dependency-glob: .ci/security-tools/uv.lock
+
+      - name: Install the frozen tooling environment
+        run: uv sync --project .ci/security-tools --frozen
+
+      - name: Exercise core and full profiles using an isolated Compose project
+        timeout-minutes: 15
+        env:
+          FCB_RUN_LOCAL_STACK: "1"
+        run: |
+          uv run --project .ci/security-tools --no-sync python -m pytest \
+            -c .ci/security-tools/pyproject.toml scripts/tests/integration/test_local_stack.py \
+            --junitxml=reports/local-stack/junit.xml
+
+      - name: Scan every infrastructure image by its tested immutable ID
+        if: ${{ !cancelled() }}
+        timeout-minutes: 28
+        run: |
+          uv run --project .ci/security-tools --no-sync python -m scripts.security.infrastructure \
+            --root . --identities reports/local-stack/images.json \
+            --output reports/infrastructure --install-tools
+
+      - name: Upload credential-free stack and infrastructure evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          # Keep additional infrastructure targets outside the FCB-62 application manifest.
+          name: local-stack-results
+          path: |
+            reports/local-stack/images.json
+            reports/local-stack/junit.xml
+            reports/infrastructure/
+            !**/failure.json
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'schedule' && 90 || 30 }}
+
   scanner-self-tests:
     name: Scanner negative integration tests
     runs-on: ubuntu-latest
@@ -707,7 +765,7 @@ jobs:
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.23"
+          version: "0.13.4"
           python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: .ci/security-tools/uv.lock
@@ -751,7 +809,7 @@ jobs:
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.23"
+          version: "0.13.4"
           python-version: "3.14.8"
           enable-cache: true
           cache-dependency-glob: .ci/security-tools/uv.lock
@@ -801,6 +859,7 @@ jobs:
       - contract-compatibility
       - execution-plan
       - integration-evidence
+      - local-stack-integration
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -3,7 +3,15 @@
 
 .DS_Store
 
-[8:35 PM]# Local test/security evidence is published as CI artifacts, not source code.
+# Local Compose credentials and machine-specific overrides.
+/.local/
+/.env
+/.env.*
+!/.env.example
+/compose.override.yaml
+/compose.override.yml
+
+# Local test/security evidence is published as CI artifacts, not source code.
 /reports/
 **/reports/
 /.ci/security-tools/.venv/

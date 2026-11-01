@@ -2,7 +2,7 @@
 
 ARG PYTHON_IMAGE=python:3.14.8-alpine3.24
 
-FROM ghcr.io/astral-sh/uv:0.12.23 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.4 AS uv
 
 FROM ${PYTHON_IMAGE} AS base
 
@@ -49,6 +49,9 @@ ENV PATH="/app/.venv/bin:$PATH" \
 WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
+
+COPY alembic.ini ./alembic.ini
+COPY migrations ./migrations
 
 USER 10001:10001
 

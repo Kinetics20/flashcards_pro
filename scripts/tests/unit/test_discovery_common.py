@@ -17,7 +17,7 @@ def tree(root):
         (folder / "pyproject.toml").write_text('[project]\nname="example"\n')
         for name in ("uv.lock", "Dockerfile", "pytest.toml", "tox.toml", "OWNERS.yaml"):
             (folder / name).write_text("example\n")
-    for name in ("policy.json", "exceptions.json", "tools.lock.json"):
+    for name in ("policy.json", "exceptions.json", "tools.lock.json", "compose-targets.json"):
         common.write_json(root / "security" / name, {})
     (root / "security/gitleaks.toml").write_text("[extend]\nuseDefault=true\n")
 
@@ -32,10 +32,15 @@ def test_discovery_and_outputs(tmp_path, monkeypatch):
         "repo-security-tools",
         "repository",
     ]
-    assert len(result["inputs"]) == 4
+    assert len(result["inputs"]) == 5
     tooling = next(t for t in result["targets"] if t["kind"] == "tooling")
     assert tooling["coverage_source"] == "scripts"
-    assert tooling["coverage_sources"] == ["scripts/security", "scripts/contracts", "scripts/ci"]
+    assert tooling["coverage_sources"] == [
+        "scripts/security",
+        "scripts/contracts",
+        "scripts/ci",
+        "scripts/local",
+    ]
     output = tmp_path / "manifest.json"
     github = tmp_path / "github.txt"
     assert (

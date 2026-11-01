@@ -252,7 +252,7 @@
     },
     "/health/ready": {
       "get": {
-        "description": "Report whether configured resources can serve traffic.\n\nAdd required dependency checks here when the service gains a database or\nanother startup-critical resource. Transient downstream services should\nnormally be reported separately and should not remove a replica from load.",
+        "description": "Report whether required process resources can serve traffic.",
         "operationId": "get_health_ready",
         "responses": {
           "200": {
@@ -264,6 +264,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "A required dependency is unavailable."
           }
         },
         "summary": "Check traffic readiness",

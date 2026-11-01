@@ -1,9 +1,15 @@
-from unittest.mock import Mock
+import asyncio
+from unittest.mock import Mock, create_autospec
 
+import pytest
 from pytest import MonkeyPatch
 
 from app import main
 from app.core.config import Environment, Settings
+from app.platform.database import DatabaseRuntime
+from app.platform.telemetry import TelemetryRuntime
+
+_DATABASE_URL = "postgresql+asyncpg://flashcards:test-only@localhost:5432/flashcards"
 
 
 def test_application_factory_configures_identity_and_documentation() -> None:
@@ -31,6 +37,8 @@ def test_application_factory_configures_identity_and_documentation() -> None:
     assert exposed.docs_url == "/docs"
     assert exposed.redoc_url == "/redoc"
     assert exposed.openapi_url == "/openapi.json"
+    assert hidden.state.database is None
+    assert exposed.state.database is None
 
 
 async def test_lifespan_configures_logging_and_reports_lifecycle(
@@ -49,3 +57,149 @@ async def test_lifespan_configures_logging_and_reports_lifecycle(
     assert info.call_count == 2
     assert info.call_args_list[0].args == ("Application started",)
     assert info.call_args_list[1].args == ("Application stopped",)
+
+
+def test_application_factory_binds_enabled_database_runtime(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    settings = Settings(
+        _env_file=None,
+        environment=Environment.TEST,
+        database_enabled=True,
+        database_url=_DATABASE_URL,
+    )
+    database = create_autospec(DatabaseRuntime, instance=True)
+    create_runtime = Mock(return_value=database)
+    monkeypatch.setattr(main, "create_database_runtime", create_runtime)
+
+    application = main.create_app(settings)
+
+    create_runtime.assert_called_once_with(settings.database)
+    assert application.state.database is database
+
+
+def test_application_factory_binds_and_instruments_telemetry(
+    test_settings: Settings,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    telemetry = create_autospec(TelemetryRuntime, instance=True)
+    create_runtime = Mock(return_value=telemetry)
+    monkeypatch.setattr(main, "create_telemetry_runtime", create_runtime)
+
+    application = main.create_app(test_settings)
+
+    create_runtime.assert_called_once_with(
+        test_settings.observability,
+        test_settings.runtime,
+    )
+    assert application.state.telemetry is telemetry
+    telemetry.instrument.assert_called_once_with(application, None)
+
+
+async def test_lifespan_pings_and_closes_enabled_database(
+    test_settings: Settings,
+) -> None:
+    application = main.create_app(test_settings)
+    database = create_autospec(DatabaseRuntime, instance=True)
+    telemetry = create_autospec(TelemetryRuntime, instance=True)
+    application.state.database = database
+    application.state.telemetry = telemetry
+
+    async with main.lifespan(application):
+        database.ping.assert_awaited_once_with()
+        database.close.assert_not_awaited()
+
+    database.close.assert_awaited_once_with()
+    telemetry.shutdown.assert_awaited_once_with()
+
+
+async def test_lifespan_closes_database_after_startup_failure(
+    test_settings: Settings,
+) -> None:
+    application = main.create_app(test_settings)
+    database = create_autospec(DatabaseRuntime, instance=True)
+    telemetry = create_autospec(TelemetryRuntime, instance=True)
+    database.ping.side_effect = RuntimeError("database startup failed")
+    application.state.database = database
+    application.state.telemetry = telemetry
+
+    with pytest.raises(RuntimeError, match="database startup failed"):
+        async with main.lifespan(application):
+            pytest.fail("lifespan yielded despite failed database startup")
+
+    database.ping.assert_awaited_once_with()
+    database.close.assert_awaited_once_with()
+    telemetry.shutdown.assert_awaited_once_with()
+
+
+def test_content_identity_and_operation_ids_survive_runtime_backport() -> None:
+    settings = Settings(_env_file=None, environment=Environment.TEST)
+    application = main.create_app(settings)
+    document = application.openapi()
+
+    assert settings.runtime.name == "Flashcards Content Service"
+    assert document["info"]["title"] == "Flashcards Content Service"
+    assert settings.database.database_enabled is False
+    assert settings.observability.telemetry_enabled is False
+    assert settings.observability.metrics_enabled is False
+    assert application.state.database is None
+    assert application.state.telemetry.enabled is False
+    assert {path: item["get"]["operationId"] for path, item in document["paths"].items()} == {
+        "/health/live": "get_health_live",
+        "/health/ready": "get_health_ready",
+        "/api/v1/status": "get_api_v1_status",
+    }
+    assert "503" in document["paths"]["/health/ready"]["get"]["responses"]
+
+
+async def test_lifespan_cleans_both_resources_after_logging_startup_failure(
+    test_settings: Settings, monkeypatch: MonkeyPatch
+) -> None:
+    application = main.create_app(test_settings)
+    database = create_autospec(DatabaseRuntime, instance=True)
+    telemetry = create_autospec(TelemetryRuntime, instance=True)
+    application.state.database = database
+    application.state.telemetry = telemetry
+    monkeypatch.setattr(main, "configure_logging", Mock(side_effect=RuntimeError("logging failed")))
+
+    with pytest.raises(RuntimeError, match="logging failed"):
+        async with main.lifespan(application):
+            pytest.fail("lifespan yielded despite failed logging startup")
+
+    database.ping.assert_not_awaited()
+    database.close.assert_awaited_once_with()
+    telemetry.shutdown.assert_awaited_once_with()
+
+
+async def test_database_cleanup_error_does_not_prevent_telemetry_shutdown(
+    test_settings: Settings,
+) -> None:
+    application = main.create_app(test_settings)
+    database = create_autospec(DatabaseRuntime, instance=True)
+    telemetry = create_autospec(TelemetryRuntime, instance=True)
+    database.close.side_effect = RuntimeError("database cleanup failed")
+    application.state.database = database
+    application.state.telemetry = telemetry
+
+    with pytest.raises(RuntimeError, match="database cleanup failed"):
+        async with main.lifespan(application):
+            database.ping.assert_awaited_once_with()
+
+    database.close.assert_awaited_once_with()
+    telemetry.shutdown.assert_awaited_once_with()
+
+
+async def test_startup_cancellation_still_cleans_both_resources(test_settings: Settings) -> None:
+    application = main.create_app(test_settings)
+    database = create_autospec(DatabaseRuntime, instance=True)
+    telemetry = create_autospec(TelemetryRuntime, instance=True)
+    database.ping.side_effect = asyncio.CancelledError()
+    application.state.database = database
+    application.state.telemetry = telemetry
+
+    with pytest.raises(asyncio.CancelledError):
+        async with main.lifespan(application):
+            pytest.fail("lifespan yielded despite cancellation")
+
+    database.close.assert_awaited_once_with()
+    telemetry.shutdown.assert_awaited_once_with()
