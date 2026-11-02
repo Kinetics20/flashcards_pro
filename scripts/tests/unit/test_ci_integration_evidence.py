@@ -1,7 +1,10 @@
+import asyncio
 import json
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -223,3 +226,63 @@ def test_cleanup_preserves_failure_when_container_already_removed(monkeypatch):
 
     monkeypatch.setattr(runtime_suite, "docker", absent)
     runtime_suite.remove_test_container("fcb65-postgres-ours", "our-token")
+
+
+def test_postgres_readiness_retries_connection_and_query_failures(monkeypatch):
+    class PostgresError(Exception):
+        pass
+
+    starting = SimpleNamespace(
+        execute=AsyncMock(side_effect=PostgresError("starting up")), terminate=Mock()
+    )
+    ready = SimpleNamespace(execute=AsyncMock(), terminate=Mock())
+    connect = AsyncMock(side_effect=[ConnectionError("connection lost"), starting, ready])
+    monkeypatch.setitem(
+        sys.modules, "asyncpg", SimpleNamespace(connect=connect, PostgresError=PostgresError)
+    )
+    monkeypatch.setattr(runtime_suite.asyncio, "sleep", AsyncMock())
+
+    asyncio.run(
+        runtime_suite.wait_for_postgres(
+            "postgresql+asyncpg://postgres:secret@127.0.0.1:50052/fcb65_test"
+        )
+    )
+
+    assert connect.await_count == 3
+    for call in connect.await_args_list:
+        assert call.args == ("postgresql://postgres:secret@127.0.0.1:50052/fcb65_test",)
+        assert call.kwargs == {"timeout": 1}
+    starting.terminate.assert_called_once()
+    ready.execute.assert_awaited_once_with("SELECT 1", timeout=1)
+    ready.terminate.assert_called_once()
+
+
+def test_postgres_readiness_deadline_closes_pending_connection(monkeypatch):
+    async def stalled_query(*args, **kwargs):
+        await asyncio.sleep(60)
+
+    connection = SimpleNamespace(execute=stalled_query, terminate=Mock())
+    monkeypatch.setitem(
+        sys.modules,
+        "asyncpg",
+        SimpleNamespace(
+            connect=AsyncMock(return_value=connection),
+            PostgresError=type("PostgresError", (Exception,), {}),
+        ),
+    )
+    with pytest.raises(pytest.fail.Exception, match="did not become ready through its host port"):
+        asyncio.run(runtime_suite.wait_for_postgres("postgresql://unused", timeout=0.01))
+    connection.terminate.assert_called_once()
+
+
+def test_postgres_readiness_failure_cleans_container_before_yield(tmp_path, monkeypatch):
+    (tmp_path / "alembic.ini").write_text("fixture")
+    monkeypatch.setattr(runtime_suite, "docker", Mock(side_effect=["container-id", "50052"]))
+    cleanup = Mock()
+    monkeypatch.setattr(runtime_suite, "remove_test_container", cleanup)
+    readiness = AsyncMock(side_effect=pytest.fail.Exception("not ready"))
+    monkeypatch.setattr(runtime_suite, "wait_for_postgres", readiness)
+    with pytest.raises(pytest.fail.Exception, match="not ready"):
+        next(runtime_suite.postgres.__wrapped__(tmp_path))
+    assert "@127.0.0.1:50052/fcb65_test" in readiness.await_args.args[0]
+    cleanup.assert_called_once()

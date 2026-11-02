@@ -99,6 +99,9 @@ that rewrites the entire checker.
 Run from the monorepo root. Docker must be available for the PostgreSQL profile.
 The fixture uses a pinned multi-architecture official PostgreSQL image, a generated
 test-only password, a unique container name/label and a random loopback host port.
+Before yielding the database, it waits up to 30 seconds for an authenticated
+`SELECT 1` through that host port. A socket probe inside the container can report
+the temporary initialization server as ready before the final TCP server starts.
 Only the exact created container and its anonymous volume are removed in `finally`.
 No Compose environment, existing database or unrelated Docker resource is reset.
 Creation itself is inside that cleanup scope. If `docker run` fails after creating

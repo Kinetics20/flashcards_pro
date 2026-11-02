@@ -10,7 +10,6 @@ import asyncio
 import os
 import secrets
 import subprocess
-import time
 import uuid
 from pathlib import Path
 
@@ -59,6 +58,31 @@ def remove_test_container(name, token):
         )
 
 
+async def wait_for_postgres(url, timeout=30):
+    """Wait for a query through the published host port, not the init server's socket."""
+    import asyncpg
+
+    try:
+        async with asyncio.timeout(timeout):
+            while True:
+                connection = None
+                try:
+                    connection = await asyncpg.connect(
+                        url.replace("postgresql+asyncpg://", "postgresql://", 1), timeout=1
+                    )
+                    await connection.execute("SELECT 1", timeout=1)
+                    return
+                except OSError, asyncpg.PostgresError:
+                    # Initialization and Docker port forwarding can briefly reject
+                    # or reset connections before the final server accepts queries.
+                    await asyncio.sleep(0.5)
+                finally:
+                    if connection is not None:
+                        connection.terminate()
+    except TimeoutError:
+        pytest.fail("Dedicated test PostgreSQL did not become ready through its host port")
+
+
 @pytest.fixture
 def postgres(project):
     if not (project / "alembic.ini").is_file():
@@ -86,27 +110,17 @@ def postgres(project):
             POSTGRES,
             env={**os.environ, "POSTGRES_PASSWORD": password},
         )
-        for _ in range(60):
-            probe = subprocess.run(
-                ["docker", "exec", container, "pg_isready", "-U", "postgres", "-d", "fcb65_test"],
-                capture_output=True,
-                timeout=5,
-                check=False,
-            )
-            if probe.returncode == 0:
-                break
-            time.sleep(0.5)
-        else:
-            pytest.fail("Dedicated test PostgreSQL did not become ready")
         port = docker(
             "inspect",
             "--format",
             '{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort}}',
             container,
         )
+        url = f"postgresql+asyncpg://postgres:{password}@127.0.0.1:{port}/fcb65_test"
+        asyncio.run(wait_for_postgres(url))
         yield {
             "container": container,
-            "url": f"postgresql+asyncpg://postgres:{password}@127.0.0.1:{port}/fcb65_test",
+            "url": url,
         }
     finally:
         remove_test_container(container_name, token)
